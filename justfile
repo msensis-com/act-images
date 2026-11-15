@@ -23,73 +23,76 @@ default:
 deps:
     ansible-galaxy collection install -r ansible/requirements.yml
 
-# Build TYPE on top of FROM for every platform into the local manifest list MANIFEST
+# Build TYPE on top of FROM for every platform in $PLATFORMS into a fresh local manifest list MANIFEST
 build type from manifest=("localhost/act-images/" + type + ":latest"):
+    #!/usr/bin/env bash
+    set -euo pipefail
+    buildah manifest rm "{{ manifest }}" >/dev/null 2>&1 || true
+    IFS=',' read -ra plats <<< "{{ platforms }}"
+    for platform in "${plats[@]}"; do
+        just --justfile "{{ justfile() }}" build-platform "{{ type }}" "{{ from }}" "$platform" "{{ manifest }}"
+    done
+    echo "==> built {{ manifest }} ({{ platforms }})"
+
+# Build one PLATFORM (e.g. linux/arm64) of TYPE on top of FROM and add it to MANIFEST (created if missing)
+build-platform type from platform manifest=("localhost/act-images/" + type + ":latest"):
     #!/usr/bin/env bash
     set -euo pipefail
     # Rootless buildah needs a user namespace to mount containers (used by the Ansible connection plugin)
     if [[ "$(id -u)" != 0 ]]; then
-        exec buildah unshare just --justfile "{{ justfile() }}" build "{{ type }}" "{{ from }}" "{{ manifest }}"
+        exec buildah unshare just --justfile "{{ justfile() }}" build-platform "{{ type }}" "{{ from }}" "{{ platform }}" "{{ manifest }}"
     fi
     cd "{{ justfile_directory() }}"
     export ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg"
 
-    created="$(date -u '+%Y-%m-%d %H:%M:%SZ')"
+    arch="$(echo "{{ platform }}" | cut -d/ -f2)"
     repo="${BUILD_REPO:-}"
-    ctr=""
-    trap 'if [[ -n "$ctr" ]]; then buildah rm "$ctr" >/dev/null 2>&1 || true; fi' EXIT
+    ctr="act-images-{{ type }}-${arch}-$$"
+    trap 'buildah rm "$ctr" >/dev/null 2>&1 || true' EXIT
+    echo "==> {{ type }} ({{ platform }}) from {{ from }}"
 
-    buildah manifest rm "{{ manifest }}" >/dev/null 2>&1 || true
-    buildah manifest create "{{ manifest }}"
+    buildah from --name "$ctr" --platform "{{ platform }}" --format docker \
+        --ulimit nofile=4096:4096 "{{ from }}"
 
-    IFS=',' read -ra plats <<< "{{ platforms }}"
-    for platform in "${plats[@]}"; do
-        arch="${platform#*/}"
-        arch="${arch%%/*}"
-        ctr="act-images-{{ type }}-${arch}-$$"
-        echo "==> {{ type }} ($platform) from {{ from }}"
+    ansible_args=(-e "image_type={{ type }}" -e "node_versions_str=${NODE:-}")
+    if [[ -n "${RUNNER:-}" && "${RUNNER}" != root ]]; then
+        ansible_args+=(-e "runner_user=$RUNNER")
+    fi
+    ansible-playbook ansible/site.yml -i "$ctr," -c containers.podman.buildah "${ansible_args[@]}"
+    buildah run "$ctr" -- rm -rf /root/.ansible
 
-        buildah from --name "$ctr" --platform "$platform" --format docker \
-            --ulimit nofile=4096:4096 "{{ from }}"
-
-        ansible_args=(-e "image_type={{ type }}" -e "node_versions_str=${NODE:-}")
-        if [[ -n "${RUNNER:-}" && "${RUNNER}" != root ]]; then
-            ansible_args+=(-e "runner_user=$RUNNER")
+    # /etc/environment is the source of truth for the image ENV (act reads ENV, not the file)
+    config_args=(--env DEBIAN_FRONTEND=noninteractive)
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            config_args+=(--env "$line")
         fi
-        ansible-playbook ansible/site.yml -i "$ctr," -c containers.podman.buildah "${ansible_args[@]}"
-        buildah run "$ctr" -- rm -rf /root/.ansible
+    done < <(buildah run "$ctr" -- cat /etc/environment)
+    if [[ -n "${RUNNER:-}" ]]; then
+        config_args+=(--user "$RUNNER")
+    fi
 
-        # /etc/environment is the source of truth for the image ENV (act reads ENV, not the file)
-        config_args=(--env DEBIAN_FRONTEND=noninteractive)
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-                config_args+=(--env "$line")
-            fi
-        done < <(buildah run "$ctr" -- cat /etc/environment)
-        if [[ -n "${RUNNER:-}" ]]; then
-            config_args+=(--user "$RUNNER")
-        fi
+    buildah config "${config_args[@]}" \
+        --workingdir /tmp \
+        --label "org.opencontainers.image.created=$(date -u '+%Y-%m-%d %H:%M:%SZ')" \
+        --label "org.opencontainers.image.vendor=${BUILD_OWNER:-}" \
+        --label "org.opencontainers.image.authors=https://github.com/${BUILD_OWNER:-}" \
+        --label "org.opencontainers.image.url=https://github.com/${repo}/tree/${BUILD_REF:-}" \
+        --label "org.opencontainers.image.source=https://github.com/${repo}" \
+        --label "org.opencontainers.image.documentation=https://github.com/${repo}" \
+        --label "org.opencontainers.image.version=${BUILD_TAG_VERSION:-}" \
+        --label "org.opencontainers.image.title=${BUILD_TAG:-{{ type }}}-${arch}" \
+        --label "org.opencontainers.image.description=Special image built for using with https://github.com/nektos/act" \
+        --label "org.opencontainers.image.revision=${BUILD_REF:-}" \
+        "$ctr"
 
-        buildah config "${config_args[@]}" \
-            --workingdir /tmp \
-            --label "org.opencontainers.image.created=$created" \
-            --label "org.opencontainers.image.vendor=${BUILD_OWNER:-}" \
-            --label "org.opencontainers.image.authors=https://github.com/${BUILD_OWNER:-}" \
-            --label "org.opencontainers.image.url=https://github.com/${repo}/tree/${BUILD_REF:-}" \
-            --label "org.opencontainers.image.source=https://github.com/${repo}" \
-            --label "org.opencontainers.image.documentation=https://github.com/${repo}" \
-            --label "org.opencontainers.image.version=${BUILD_TAG_VERSION:-}" \
-            --label "org.opencontainers.image.title=${BUILD_TAG:-{{ type }}}-${arch}" \
-            --label "org.opencontainers.image.description=Special image built for using with https://github.com/nektos/act" \
-            --label "org.opencontainers.image.revision=${BUILD_REF:-}" \
-            "$ctr"
-
-        img="localhost/act-images-build/{{ type }}-${arch}:$$"
-        buildah commit --format docker --rm "$ctr" "$img"
-        ctr=""
-        buildah manifest add "{{ manifest }}" "$img"
-    done
-    echo "==> built {{ manifest }}"
+    img="localhost/act-images-build/{{ type }}-${arch}:$$"
+    buildah commit --format docker --rm "$ctr" "$img"
+    if ! buildah manifest exists "{{ manifest }}"; then
+        buildah manifest create "{{ manifest }}"
+    fi
+    buildah manifest add "{{ manifest }}" "$img"
+    echo "==> added {{ platform }} to {{ manifest }}"
 
 # Push local manifest list MANIFEST (all platforms) to each TAG, retrying 3 times
 push manifest +tags:
@@ -128,22 +131,34 @@ tags type version:
         if [[ -n "${PUSH_DOCKER_HUB:-}" ]]; then echo "docker.io/$slug:$n"; fi
     done
 
-# CI entrypoint: build TYPE for Ubuntu VERSION on top of FROM, then push it to every tag from `tags`
+# CI: build one PLATFORM of TYPE for Ubuntu VERSION on top of FROM into localhost/act-images/TYPE:VERSION
+ci-build type version from platform:
+    BUILD_TAG="${BUILD_TAG:-{{ type }}-{{ version }}}" BUILD_TAG_VERSION="${BUILD_TAG_VERSION:-${PART_TAG:-}}" \
+        just --justfile "{{ justfile() }}" build-platform "{{ type }}" "{{ from }}" "{{ platform }}" "localhost/act-images/{{ type }}:{{ version }}"
+
+# CI: push localhost/act-images/TYPE:VERSION (all built platforms) to every tag from `tags`
+ci-push type version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tags_out="$(just --justfile "{{ justfile() }}" tags "{{ type }}" "{{ version }}")"
+    if [[ -z "$tags_out" ]]; then
+        echo "No registry enabled, not pushing"
+        exit 0
+    fi
+    mapfile -t tags <<< "$tags_out"
+    printf 'pushing %s\n' "${tags[@]}"
+    just --justfile "{{ justfile() }}" push "localhost/act-images/{{ type }}:{{ version }}" "${tags[@]}"
+
+# CI: build TYPE for Ubuntu VERSION on top of FROM for every platform in $PLATFORMS, then push it
 ci type version from:
     #!/usr/bin/env bash
     set -euo pipefail
-    export BUILD_TAG="${BUILD_TAG:-{{ type }}-{{ version }}}"
-    export BUILD_TAG_VERSION="${BUILD_TAG_VERSION:-${PART_TAG:-}}"
-    tags_out="$(just --justfile "{{ justfile() }}" tags "{{ type }}" "{{ version }}")"
-    mapfile -t tags <<< "$tags_out"
-    manifest="localhost/act-images/{{ type }}:{{ version }}"
-    just --justfile "{{ justfile() }}" build "{{ type }}" "{{ from }}" "$manifest"
-    if [[ -n "$tags_out" ]]; then
-        printf 'pushing %s\n' "${tags[@]}"
-        just --justfile "{{ justfile() }}" push "$manifest" "${tags[@]}"
-    else
-        echo "No registry enabled, not pushing"
-    fi
+    buildah manifest rm "localhost/act-images/{{ type }}:{{ version }}" >/dev/null 2>&1 || true
+    IFS=',' read -ra plats <<< "{{ platforms }}"
+    for platform in "${plats[@]}"; do
+        just --justfile "{{ justfile() }}" ci-build "{{ type }}" "{{ version }}" "{{ from }}" "$platform"
+    done
+    just --justfile "{{ justfile() }}" ci-push "{{ type }}" "{{ version }}"
 
 # Lint the Ansible code
 lint:
