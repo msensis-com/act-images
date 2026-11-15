@@ -47,6 +47,7 @@
 
 - name: Install base packages
   ansible.builtin.apt:
+    state: latest
     update_cache: true
     install_recommends: false
     name:
@@ -81,6 +82,7 @@
 
 - name: Install git
   ansible.builtin.apt:
+    state: latest
     name: git
     update_cache: true
 
@@ -98,6 +100,7 @@
 
 - name: Install git-lfs
   ansible.builtin.apt:
+    state: latest
     name: git-lfs
     update_cache: true
 

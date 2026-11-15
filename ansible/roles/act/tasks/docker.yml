@@ -19,6 +19,7 @@
 
 - name: Install moby engine, cli, buildx and compose
   ansible.builtin.apt:
+    state: latest
     update_cache: true
     install_recommends: false
     name:

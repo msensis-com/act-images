@@ -60,7 +60,7 @@ build type from manifest=("localhost/act-images/" + type + ":latest"):
         buildah run "$ctr" -- rm -rf /root/.ansible
 
         # /etc/environment is the source of truth for the image ENV (act reads ENV, not the file)
-        config_args=()
+        config_args=(--env DEBIAN_FRONTEND=noninteractive)
         while IFS= read -r line; do
             if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
                 config_args+=(--env "$line")
@@ -71,7 +71,6 @@ build type from manifest=("localhost/act-images/" + type + ":latest"):
         fi
 
         buildah config "${config_args[@]}" \
-            --env DEBIAN_FRONTEND=noninteractive \
             --workingdir /tmp \
             --label "org.opencontainers.image.created=$created" \
             --label "org.opencontainers.image.vendor=${BUILD_OWNER:-}" \

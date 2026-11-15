@@ -7,6 +7,7 @@
 
 - name: Install Rust build dependencies
   ansible.builtin.apt:
+    state: latest
     name: [build-essential, llvm, libssl-dev]
     update_cache: true
 

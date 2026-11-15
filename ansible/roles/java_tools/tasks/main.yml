@@ -28,6 +28,7 @@
 
 - name: Install Ant
   ansible.builtin.apt:
+    state: latest
     name: [ant, ant-optional]
     install_recommends: false
 
@@ -123,5 +124,6 @@
 
 - name: Install sbt
   ansible.builtin.apt:
+    state: latest
     name: sbt
     update_cache: true

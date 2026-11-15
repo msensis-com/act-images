@@ -1,6 +1,8 @@
 ---
+# /tmp/ansible_* is this task's own module payload (removed by Ansible afterwards), so it is skipped.
 - name: Clean apt cache, logs and temp files
   ansible.builtin.shell: |
     apt-get clean
-    rm -rf /var/cache/* /var/log/* /var/lib/apt/lists/* /tmp/* || echo 'Failed to delete directories'
+    rm -rf /var/cache/* /var/log/* /var/lib/apt/lists/* || echo 'Failed to delete directories'
+    find /tmp -mindepth 1 -maxdepth 1 ! -name 'ansible_*' -exec rm -rf {} + || echo 'Failed to clean /tmp'
   changed_when: true

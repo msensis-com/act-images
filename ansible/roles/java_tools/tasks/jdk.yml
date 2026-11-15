@@ -6,6 +6,7 @@
 
 - name: Install Temurin JDK {{ java_version }}
   ansible.builtin.apt:
+    state: latest
     name: "temurin-{{ java_version }}-jdk"
     update_cache: true
 

@@ -10,6 +10,9 @@
       ansible.builtin.raw: >-
         command -v python3 >/dev/null 2>&1 ||
         { apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3; }
+      args:
+        # the buildah connection runs raw commands without a shell
+        executable: /bin/sh
       changed_when: false
 
 - name: Provision image

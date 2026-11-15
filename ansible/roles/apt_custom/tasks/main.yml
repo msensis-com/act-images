@@ -11,6 +11,7 @@
 
 - name: Install apt-utils
   ansible.builtin.apt:
+    state: latest
     name: apt-utils
     update_cache: true
 

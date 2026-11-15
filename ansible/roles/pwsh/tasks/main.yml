@@ -2,6 +2,7 @@
 # Port of pwsh.sh: PowerShell from the release tarball (works for both amd64 and arm64).
 - name: Install PowerShell dependencies
   ansible.builtin.apt:
+    state: latest
     name: libicu-dev
     update_cache: true
     install_recommends: false
