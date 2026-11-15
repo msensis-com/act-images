@@ -1,0 +1,4 @@
+---
+# tar/unzip/git config/apt-get clean are used on purpose (strip-components, creates:, parity with the old scripts)
+skip_list:
+  - command-instead-of-module

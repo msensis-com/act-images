@@ -13,6 +13,34 @@
   - Act
 - Performance and/or disk space improvements
 
+## How images are built
+
+Images are provisioned with [Ansible](https://docs.ansible.com/) through [buildah](https://buildah.io/) working containers, driven by a [`justfile`](./justfile). There is no Dockerfile:
+
+```text
+buildah from --platform <p> <FROM>                    # e.g. buildpack-deps:24.04, or the act image for flavours
+  -> ansible-playbook -c containers.podman.buildah    # ansible/site.yml applies the roles for the image type
+  -> buildah config --env <each line of /etc/environment> --label ...
+  -> buildah commit, then add to a multi-arch manifest list (linux/amd64 + linux/arm64)
+```
+
+- [`ansible/group_vars/all.yml`](./ansible/group_vars/all.yml) maps each image type to its roles (`image_roles`)
+- [`ansible/roles/`](./ansible/roles) contains one role per tool set (`act`, `runner`, `go`, `js`, `pwsh`, `rust`, `dotnet`, `java_tools`, `gh`, ...)
+- `/etc/environment` inside the image is the source of truth for the environment, and is copied into the image `ENV` (which is what [nektos/act] uses)
+
+### Building locally
+
+Requirements: `buildah`, `ansible-core`, `just`, and `qemu-user-static` (binfmt) for non-native platforms.
+
+```sh
+just deps                                                     # install the Ansible collections
+PLATFORMS=linux/amd64 RUNNER=root just build act docker.io/library/buildpack-deps:24.04 localhost/act-images/act:24.04
+PLATFORMS=linux/amd64 RUNNER=runner just build runner localhost/act-images/act:24.04
+PLATFORMS=linux/amd64 just build js localhost/act-images/act:24.04
+just test localhost/act-images/act:24.04                      # run nektos/act's test suite against an image
+just lint
+```
+
 ## Images available
 
 - [ChristopherHX/runner-image-blobs](https://github.com/ChristopherHX/runner-image-blobs) GitHub Actions Hosted runner image copy containing almost all possible tools (image is extremely big, 20GB compressed, ~60GB extracted)
@@ -26,52 +54,52 @@
     - `ghcr.io/catthehacker/ubuntu:full-24.04`
     - `ghcr.io/catthehacker/ubuntu:full-22.04`
 
-- [`/linux/ubuntu/act`](./linux/ubuntu/scripts/act.sh) - image used in [github.com/nektos/act][nektos/act] as medium size image retaining compatibility with most actions while maintaining small size
+- [`act`](./ansible/roles/act/tasks/main.yml) - image used in [github.com/nektos/act][nektos/act] as medium size image retaining compatibility with most actions while maintaining small size
   - `ghcr.io/catthehacker/ubuntu:act-22.04`
   - `ghcr.io/catthehacker/ubuntu:act-24.04`
   - `ghcr.io/catthehacker/ubuntu:act-26.04`
   - `ghcr.io/catthehacker/ubuntu:act-latest` (aka `act-26.04`)
-- [`/linux/ubuntu/runner`](./linux/ubuntu/scripts/runner.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with `runner` as user instead of `root`
+- [`runner`](./ansible/roles/runner/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `runner` as user instead of `root`
   - `ghcr.io/catthehacker/ubuntu:runner-22.04`
   - `ghcr.io/catthehacker/ubuntu:runner-24.04`
   - `ghcr.io/catthehacker/ubuntu:runner-26.04`
   - `ghcr.io/catthehacker/ubuntu:runner-latest` (aka `runner-26.04`)
-- [`/linux/ubuntu/js`](./linux/ubuntu/scripts/js.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with `js` tools installed (`yarn`, `nvm`, `node` v20/v24, `pnpm`, `grunt`, etc.)
+- [`js`](./ansible/roles/js/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `js` tools installed (`yarn`, `nvm`, `node` v20/v24, `pnpm`, `grunt`, etc.)
   - `ghcr.io/catthehacker/ubuntu:js-22.04`
   - `ghcr.io/catthehacker/ubuntu:js-24.04`
   - `ghcr.io/catthehacker/ubuntu:js-26.04`
   - `ghcr.io/catthehacker/ubuntu:js-latest` (aka `js-26.04`)
-- [`/linux/ubuntu/rust`](./linux/ubuntu/scripts/rust.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with `rust` tools installed (`rustfmt`, `clippy`, `cbindgen`, etc.)
+- [`rust`](./ansible/roles/rust/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `rust` tools installed (`rustfmt`, `clippy`, `cbindgen`, etc.)
   - `ghcr.io/catthehacker/ubuntu:rust-22.04`
   - `ghcr.io/catthehacker/ubuntu:rust-24.04`
   - `ghcr.io/catthehacker/ubuntu:rust-26.04`
   - `ghcr.io/catthehacker/ubuntu:rust-latest` (aka `rust-26.04`)
-- [`/linux/ubuntu/pwsh`](./linux/ubuntu/scripts/pwsh.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with `pwsh` tools and modules installed
+- [`pwsh`](./ansible/roles/pwsh/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `pwsh` tools and modules installed
   - `ghcr.io/catthehacker/ubuntu:pwsh-22.04`
   - `ghcr.io/catthehacker/ubuntu:pwsh-24.04`
   - `ghcr.io/catthehacker/ubuntu:pwsh-26.04`
   - `ghcr.io/catthehacker/ubuntu:pwsh-latest` (aka `pwsh-26.04`)
-- [`/linux/ubuntu/go`](./linux/ubuntu/scripts/go.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with `go` tools installed
+- [`go`](./ansible/roles/go/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `go` tools installed
   - `ghcr.io/catthehacker/ubuntu:go-22.04`
   - `ghcr.io/catthehacker/ubuntu:go-24.04`
   - `ghcr.io/catthehacker/ubuntu:go-26.04`
   - `ghcr.io/catthehacker/ubuntu:go-latest` (aka `go-26.04`)
-- [`/linux/ubuntu/dotnet`](./linux/ubuntu/scripts/dotnet.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with `.NET` tools installed
+- [`dotnet`](./ansible/roles/dotnet/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `.NET` tools installed
   - `ghcr.io/catthehacker/ubuntu:dotnet-22.04`
   - `ghcr.io/catthehacker/ubuntu:dotnet-24.04`
   - `ghcr.io/catthehacker/ubuntu:dotnet-26.04`
   - `ghcr.io/catthehacker/ubuntu:dotnet-latest` (aka `dotnet-26.04`)
-- [`/linux/ubuntu/java-tools`](./linux/ubuntu/scripts/java-tools.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with Java tools installed
+- [`java-tools`](./ansible/roles/java_tools/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with Java tools installed
   - `ghcr.io/catthehacker/ubuntu:java-tools-22.04`
   - `ghcr.io/catthehacker/ubuntu:java-tools-24.04`
   - `ghcr.io/catthehacker/ubuntu:java-tools-26.04`
   - `ghcr.io/catthehacker/ubuntu:java-tools-latest` (aka `java-tools-26.04`)
-- [`/linux/ubuntu/gh`](./linux/ubuntu/scripts/gh.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with GitHub CLI tools installed
+- [`gh`](./ansible/roles/gh/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with GitHub CLI tools installed
   - `ghcr.io/catthehacker/ubuntu:gh-22.04`
   - `ghcr.io/catthehacker/ubuntu:gh-24.04`
   - `ghcr.io/catthehacker/ubuntu:gh-26.04`
   - `ghcr.io/catthehacker/ubuntu:gh-latest` (aka `gh-26.04`)
-- [`/linux/ubuntu/custom`](./linux/ubuntu/scripts/custom.sh) - `ghcr.io/catthehacker/ubuntu:act-*` but with custom tools installed
+- [`custom`](./ansible/group_vars/all.yml) (roles listed under `custom_roles`) - `ghcr.io/catthehacker/ubuntu:act-*` but with custom tools installed
   - `ghcr.io/catthehacker/ubuntu:custom-22.04`
   - `ghcr.io/catthehacker/ubuntu:custom-24.04`
   - `ghcr.io/catthehacker/ubuntu:custom-26.04`

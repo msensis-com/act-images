@@ -1,0 +1,28 @@
+---
+# Port of go.sh: Go versions from the runner-images toolset into the act tool cache.
+- name: Load toolset
+  ansible.builtin.include_role:
+    name: toolset
+
+- name: Read Go toolset entry
+  ansible.builtin.set_fact:
+    go_toolset: "{{ toolset_data.toolcache | default([]) | selectattr('name', 'equalto', 'go') | first }}"
+
+- name: Fetch Go versions manifest
+  ansible.builtin.uri:
+    url: "{{ go_toolset.url }}"
+    return_content: true
+  register: go_manifest
+
+- name: Install Go versions
+  ansible.builtin.include_tasks: version.yml
+  loop: "{{ go_toolset.versions }}"
+  loop_control:
+    loop_var: go_spec
+
+- name: Add ~/go/bin to PATH
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: prepend_path
+  vars:
+    envfile_path: /root/go/bin

@@ -1,0 +1,42 @@
+---
+# Provisions a buildah working container. Invoked by the justfile:
+#   ansible-playbook -i "<container>," -c containers.podman.buildah site.yml -e image_type=<type>
+
+- name: Bootstrap Python inside the container
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ensure python3 is available for Ansible modules
+      ansible.builtin.raw: >-
+        command -v python3 >/dev/null 2>&1 ||
+        { apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3; }
+      changed_when: false
+
+- name: Provision image
+  hosts: all
+  gather_facts: true
+  gather_subset: [min]
+  # /etc/environment is the image's source of truth for env vars (it becomes the image ENV).
+  # Re-read after every role so later roles see PATH etc. like the old `. /etc/environment`.
+  environment: "{{ envfile_env | default({}) | combine({'DEBIAN_FRONTEND': 'noninteractive'}) }}"
+  tasks:
+    - name: Validate image type
+      ansible.builtin.assert:
+        that: image_type is defined and image_type in image_roles
+        fail_msg: "image_type must be one of: {{ image_roles.keys() | join(', ') }}"
+        quiet: true
+
+    - name: Load /etc/environment
+      ansible.builtin.include_role:
+        name: envfile
+        tasks_from: load
+
+    - name: Apply roles for {{ image_type }}
+      ansible.builtin.include_tasks: tasks/apply_role.yml
+      loop: "{{ image_roles[image_type] }}"
+      loop_control:
+        loop_var: role_name
+
+    - name: Clean up image
+      ansible.builtin.include_role:
+        name: cleanup

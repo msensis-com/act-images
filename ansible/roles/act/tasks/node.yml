@@ -1,0 +1,45 @@
+---
+- name: Resolve latest Node.js {{ node_major }}
+  ansible.builtin.set_fact:
+    act_node_release: "{{ (act_node_index.json | selectattr('version', 'match', '^v' ~ node_major ~ '\\.') | first).version }}"
+
+- name: Set Node.js paths for {{ node_major }}
+  ansible.builtin.set_fact:
+    act_node_path: "{{ act_toolsdirectory }}/node/{{ act_node_release[1:] }}/{{ arch.node }}"
+    act_node_tarball: "node-{{ act_node_release }}-linux-{{ arch.node }}.tar.xz"
+
+- name: Create {{ act_node_path }}
+  ansible.builtin.file:
+    path: "{{ act_node_path }}"
+    state: directory
+    mode: "0777"
+
+- name: Download Node.js {{ act_node_release }}
+  ansible.builtin.get_url:
+    url: "https://nodejs.org/download/release/latest-v{{ node_major }}.x/{{ act_node_tarball }}"
+    dest: "/tmp/{{ act_node_tarball }}"
+    mode: "0644"
+
+- name: Extract Node.js {{ act_node_release }}
+  ansible.builtin.command:
+    cmd: tar -Jxf /tmp/{{ act_node_tarball }} --strip-components=1 -C {{ act_node_path }}
+    creates: "{{ act_node_path }}/bin/node"
+
+- name: Remove Node.js tarball
+  ansible.builtin.file:
+    path: "/tmp/{{ act_node_tarball }}"
+    state: absent
+
+- name: Make default Node.js {{ node_major }}
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: prepend_path
+  vars:
+    envfile_path: "{{ act_node_path }}/bin"
+  when: node_major | string == node_default | string
+
+- name: Show node and npm versions
+  ansible.builtin.shell: "{{ act_node_path }}/bin/node -v && {{ act_node_path }}/bin/npm -v"
+  environment:
+    PATH: "{{ act_node_path }}/bin:{{ ansible_facts['env']['PATH'] }}"
+  changed_when: false

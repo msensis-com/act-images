@@ -1,0 +1,22 @@
+---
+# Port of the apt preparation at the top of custom.sh
+- name: Configure apt retries and assume-yes
+  ansible.builtin.copy:
+    dest: "{{ item.dest }}"
+    content: "{{ item.content }}\n"
+    mode: "0644"
+  loop:
+    - { dest: /etc/apt/apt.conf.d/80-retries, content: 'APT::Acquire::Retries "10";' }
+    - { dest: /etc/apt/apt.conf.d/90assumeyes, content: 'APT::Get::Assume-Yes "true";' }
+
+- name: Install apt-utils
+  ansible.builtin.apt:
+    name: apt-utils
+    update_cache: true
+
+# https://github.com/ilikenwf/apt-fast
+- name: Install apt-fast
+  ansible.builtin.shell: bash -c "$(curl -sL https://raw.githubusercontent.com/ilikenwf/apt-fast/master/quick-install.sh)"
+  args:
+    executable: /bin/bash
+  changed_when: true

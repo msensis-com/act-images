@@ -1,0 +1,12 @@
+---
+- name: Read /etc/environment
+  ansible.builtin.slurp:
+    src: /etc/environment
+  register: envfile_raw
+
+- name: Parse /etc/environment into envfile_env
+  ansible.builtin.set_fact:
+    envfile_env: >-
+      {{ dict((envfile_raw.content | b64decode).splitlines()
+         | map('regex_findall', '^([A-Za-z_][A-Za-z0-9_]*)="?(.*?)"?$')
+         | select | map('first')) }}

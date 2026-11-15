@@ -1,0 +1,163 @@
+---
+# Port of linux/ubuntu/scripts/act.sh: the base image every other image builds on.
+
+- name: Remove quotes from /etc/environment so it can be sourced by sh/bash
+  ansible.builtin.replace:
+    path: /etc/environment
+    regexp: '"'
+    replace: ""
+
+- name: Compute OS identifiers
+  ansible.builtin.set_fact:
+    act_image_os: "ubuntu{{ ansible_facts['distribution_version'].split('.')[0] }}"
+    act_lsb_release: "{{ ansible_facts['distribution_version'] }}"
+    act_lsb_os_version: "{{ ansible_facts['distribution_version'] | replace('.', '') }}"
+    act_codename: "{{ ansible_facts['distribution_release'] }}"
+
+- name: Write base environment variables
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: set
+  vars:
+    envfile_name: "{{ item.0 }}"
+    envfile_value: "{{ item.1 }}"
+  loop:
+    - [IMAGE_OS, "{{ act_image_os }}"]
+    - [ImageOS, "{{ act_image_os }}"]
+    - [LSB_RELEASE, "{{ act_lsb_release }}"]
+    - [AGENT_TOOLSDIRECTORY, "{{ agent_toolsdirectory }}"]
+    - [RUN_TOOL_CACHE, "{{ agent_toolsdirectory }}"]
+    - [DEPLOYMENT_BASEPATH, /opt/runner]
+    - [USER, root]
+    - [RUNNER_USER, root]
+    - [ACT_TOOLSDIRECTORY, "{{ act_toolsdirectory }}"]
+    - [LSB_OS_VERSION, "{{ act_lsb_os_version }}"]
+
+- name: Create tool cache and /github directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0777"
+    owner: "1001"
+    group: "1000"
+  loop:
+    - "{{ agent_toolsdirectory }}"
+    - "{{ act_toolsdirectory }}"
+    - /github
+
+- name: Install base packages
+  ansible.builtin.apt:
+    update_cache: true
+    install_recommends: false
+    name:
+      - ssh
+      - gawk
+      - curl
+      - jq
+      - wget
+      - sudo
+      - gnupg-agent
+      - ca-certificates
+      - software-properties-common
+      - apt-transport-https
+      - libyaml-0-2
+      - zstd
+      - zip
+      - unzip
+      - xz-utils
+      - python3-pip
+      - python3-venv
+      - pipx
+
+- name: Link python to python3
+  ansible.builtin.file:
+    src: /usr/bin/python3
+    dest: /usr/local/bin/python
+    state: link
+
+- name: Add git-core PPA
+  ansible.builtin.command: add-apt-repository -y ppa:git-core/ppa
+  changed_when: true
+
+- name: Install git
+  ansible.builtin.apt:
+    name: git
+    update_cache: true
+
+- name: Mark all directories as safe for git
+  ansible.builtin.command: git config --system --add safe.directory '*'
+  changed_when: true
+
+- name: Add git-lfs packagecloud repository
+  ansible.builtin.shell: |
+    set -o pipefail
+    wget -qO- https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Install git-lfs
+  ansible.builtin.apt:
+    name: git-lfs
+    update_cache: true
+
+- name: Create {{ imagegeneration_dir }}
+  ansible.builtin.file:
+    path: "{{ imagegeneration_dir }}"
+    state: directory
+    mode: "0755"
+
+# Flavour images read tool versions from this file; missing for unreleased Ubuntu versions is tolerated.
+- name: Download runner-images toolset for {{ act_lsb_release }}
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/actions/runner-images/main/images/ubuntu/toolsets/toolset-{{ act_lsb_os_version }}.json"
+    dest: "{{ toolset_path }}"
+    mode: "0644"
+  register: act_toolset_dl
+  failed_when: false
+
+- name: Report missing toolset
+  ansible.builtin.debug:
+    msg: "toolset-{{ act_lsb_os_version }}.json not available: {{ act_toolset_dl.msg | default('') }}"
+  when: act_toolset_dl is failed or act_toolset_dl.status_code | default(200) != 200
+
+- name: Download runner-images LICENSE
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/actions/runner-images/main/LICENSE
+    dest: "{{ imagegeneration_dir }}/LICENSE"
+    mode: "0644"
+
+- name: Replace jq with upstream jq 1.6 binary (x86_64)
+  ansible.builtin.get_url:
+    url: https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
+    dest: /usr/bin/jq
+    mode: "0755"
+    force: true
+  when: ansible_facts['architecture'] == 'x86_64'
+
+- name: Create ~/.ssh
+  ansible.builtin.file:
+    path: /root/.ssh
+    state: directory
+    mode: "0700"
+
+- name: Add github.com and ssh.dev.azure.com to system known hosts
+  ansible.builtin.shell: |
+    ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts
+    ssh-keyscan ssh.dev.azure.com >> /etc/ssh/ssh_known_hosts
+  changed_when: true
+
+- name: Install docker (moby) from packages.microsoft.com
+  ansible.builtin.include_tasks: docker.yml
+
+- name: Fetch Node.js release index
+  ansible.builtin.uri:
+    url: https://nodejs.org/download/release/index.json
+    return_content: true
+  register: act_node_index
+
+- name: Install Node.js
+  ansible.builtin.include_tasks: node.yml
+  loop: "{{ node_versions }}"
+  loop_control:
+    loop_var: node_major

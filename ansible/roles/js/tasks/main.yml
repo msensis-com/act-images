@@ -1,0 +1,82 @@
+---
+# Port of js.sh: nvm plus global npm tooling on the default Node.js.
+- name: Look up latest nvm release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/nvm-sh/nvm/releases/latest
+    headers: "{{ github_api_headers }}"
+  register: js_nvm_release
+
+- name: Install nvm
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/{{ js_nvm_release.json.tag_name }}/install.sh" | bash
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: /root
+  changed_when: true
+
+- name: Set NVM_DIR
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: set
+  vars:
+    envfile_name: NVM_DIR
+    envfile_value: /root/.nvm
+
+- name: Load nvm in new login shells
+  ansible.builtin.lineinfile:
+    path: /etc/skel/.bash_profile
+    line: '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm'
+    create: true
+    mode: "0644"
+
+- name: Show nvm version
+  ansible.builtin.shell: . /root/.nvm/nvm.sh && nvm --version
+  args:
+    executable: /bin/bash
+  environment:
+    NVM_DIR: /root/.nvm
+  changed_when: false
+
+# npm times out under qemu with the defaults; otherwise there are no log updates for 10m+.
+- name: Configure npm for slow (emulated) builds
+  ansible.builtin.command: npm config set {{ item }}
+  changed_when: true
+  loop:
+    - fetch-timeout 120000
+    - fetch-retry-mintimeout 120000
+    - fetch-retry-maxtimeout 120000
+    - prefer-offline true
+    - registry http://registry.npmjs.org/
+    - maxsockets 4
+    - fetch-retries 4
+    - loglevel verbose
+
+- name: Install global JS tools
+  ansible.builtin.command: npm install -g {{ item }}
+  changed_when: true
+  loop:
+    - npm
+    - pnpm
+    - yarn
+    - grunt
+    - gulp
+    - n
+    - parcel-bundler
+    - typescript
+    - newman
+    - vercel
+    - webpack
+    - webpack-cli
+    - lerna
+    - netlify-cli
+
+- name: Show npm, pnpm and yarn versions
+  ansible.builtin.shell: npm -v && pnpm -v && yarn -v
+  changed_when: false
+
+- name: Remove build-time npm config
+  ansible.builtin.file:
+    path: /root/.npmrc
+    state: absent

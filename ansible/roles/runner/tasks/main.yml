@@ -1,0 +1,125 @@
+---
+# Port of runner.sh: act image with a non-root, passwordless-sudo user.
+
+- name: Create runner group (gid 1001)
+  ansible.builtin.group:
+    name: "{{ runner_user }}"
+    gid: 1001
+
+# 24.04+ ships a default 'ubuntu' user/group with id 1000; reuse it as the admin then.
+- name: Look up existing group with gid 1000
+  ansible.builtin.command: getent group 1000
+  register: runner_gid1000
+  changed_when: false
+  failed_when: false
+
+- name: Pick runner admin name
+  ansible.builtin.set_fact:
+    runner_admin: >-
+      {{ runner_gid1000.stdout.split(':')[0] if runner_gid1000.rc == 0 else runner_user ~ 'admin' }}
+    runner_admin_exists: "{{ runner_gid1000.rc == 0 }}"
+
+- name: Create runner admin group (gid 1000)
+  ansible.builtin.group:
+    name: "{{ runner_admin }}"
+    gid: 1000
+  when: not runner_admin_exists
+
+- name: Create runner user (uid 1001)
+  ansible.builtin.user:
+    name: "{{ runner_user }}"
+    uid: 1001
+    group: "{{ runner_user }}"
+    groups: [sudo, docker]
+    append: true
+    create_home: true
+    shell: /bin/bash
+
+- name: Create runner admin user (uid 1000)
+  ansible.builtin.user:
+    name: "{{ runner_admin }}"
+    uid: 1000
+    group: "{{ runner_admin }}"
+    groups: [sudo, docker]
+    append: true
+    create_home: true
+    shell: /bin/bash
+  when: not runner_admin_exists
+
+- name: Add existing uid 1000 user to docker group
+  ansible.builtin.user:
+    name: "{{ runner_admin }}"
+    groups: [docker]
+    append: true
+  when: runner_admin_exists
+
+- name: Grant passwordless sudo
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
+    line: "{{ item }} ALL=(ALL) NOPASSWD: ALL"
+  loop:
+    - "{{ runner_user }}"
+    - "{{ runner_admin }}"
+
+- name: Show created users
+  ansible.builtin.shell: id {{ runner_user }} && id {{ runner_admin }}
+  changed_when: false
+
+- name: Set USER in /etc/environment
+  ansible.builtin.replace:
+    path: /etc/environment
+    regexp: "USER=root"
+    replace: "USER={{ runner_user }}"
+
+- name: Set RUNNER_TEMP
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: set
+  vars:
+    envfile_name: RUNNER_TEMP
+    envfile_value: "/home/{{ runner_user }}/work/_temp"
+
+- name: Create work directories
+  ansible.builtin.file:
+    path: "/home/{{ runner_user }}/work/_temp"
+    state: directory
+    owner: "{{ runner_user }}"
+    group: "{{ runner_user }}"
+    mode: "0755"
+
+- name: Fix ownership of work directory
+  ansible.builtin.file:
+    path: "/home/{{ runner_user }}/work"
+    state: directory
+    owner: "{{ runner_user }}"
+    group: "{{ runner_user }}"
+    recurse: true
+
+- name: Create runner ~/.ssh
+  ansible.builtin.file:
+    path: "/home/{{ runner_user }}/.ssh"
+    state: directory
+    owner: "{{ runner_user }}"
+    group: "{{ runner_user }}"
+    mode: "0700"
+
+- name: Add github.com and ssh.dev.azure.com to runner known hosts
+  ansible.builtin.shell: |
+    ssh-keyscan -t rsa github.com >> /home/{{ runner_user }}/.ssh/known_hosts
+    ssh-keyscan -t rsa ssh.dev.azure.com >> /home/{{ runner_user }}/.ssh/known_hosts
+  changed_when: true
+
+- name: Fix known_hosts permissions
+  ansible.builtin.file:
+    path: "/home/{{ runner_user }}/.ssh/known_hosts"
+    owner: "{{ runner_user }}"
+    group: "{{ runner_user }}"
+    mode: "0644"
+
+- name: Give runner ownership of the hosted tool cache
+  ansible.builtin.file:
+    path: "{{ agent_toolsdirectory }}"
+    state: directory
+    owner: "{{ runner_user }}"
+    group: "{{ runner_admin }}"
+    recurse: true

@@ -1,0 +1,19 @@
+---
+# Port of basic.sh: common CLI utilities and dev packages listed in the runner-images toolset.
+- name: Load toolset
+  ansible.builtin.include_role:
+    name: toolset
+
+# lib32z1 is not available on arm64
+- name: Select toolset apt packages
+  ansible.builtin.set_fact:
+    basic_packages: >-
+      {{ (toolset_data.apt.common_packages | default([])
+          | reject('in', [] if ansible_facts['architecture'] == 'x86_64' else ['lib32z1']) | list)
+         + (toolset_data.apt.cmd_packages | default([])) }}
+
+- name: Install toolset apt packages
+  ansible.builtin.apt:
+    name: "{{ basic_packages }}"
+    update_cache: true
+    install_recommends: false

@@ -1,0 +1,70 @@
+---
+# Port of pwsh.sh: PowerShell from the release tarball (works for both amd64 and arm64).
+- name: Install PowerShell dependencies
+  ansible.builtin.apt:
+    name: libicu-dev
+    update_cache: true
+    install_recommends: false
+
+- name: Look up latest PowerShell release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/PowerShell/PowerShell/releases/latest
+    headers: "{{ github_api_headers }}"
+  register: pwsh_release
+
+- name: Set PowerShell paths
+  ansible.builtin.set_fact:
+    pwsh_version: "{{ pwsh_release.json.tag_name[1:] }}"
+    pwsh_dir: "/opt/microsoft/powershell/{{ pwsh_release.json.tag_name[1:2] }}"
+
+- name: Create {{ pwsh_dir }}
+  ansible.builtin.file:
+    path: "{{ pwsh_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Download PowerShell {{ pwsh_version }}
+  ansible.builtin.get_url:
+    url: "https://github.com/PowerShell/PowerShell/releases/download/v{{ pwsh_version }}/powershell-{{ pwsh_version }}-linux-{{ arch.pwsh }}.tar.gz"
+    dest: /tmp/powershell.tar.gz
+    mode: "0644"
+
+- name: Extract PowerShell
+  ansible.builtin.command:
+    cmd: tar zxf /tmp/powershell.tar.gz -C {{ pwsh_dir }}
+    creates: "{{ pwsh_dir }}/pwsh"
+
+- name: Make pwsh executable
+  ansible.builtin.file:
+    path: "{{ pwsh_dir }}/pwsh"
+    mode: "0755"
+
+- name: Link /usr/bin/pwsh
+  ansible.builtin.file:
+    src: "{{ pwsh_dir }}/pwsh"
+    dest: /usr/bin/pwsh
+    state: link
+
+- name: Remove PowerShell tarball
+  ansible.builtin.file:
+    path: /tmp/powershell.tar.gz
+    state: absent
+
+- name: Show PowerShell version
+  ansible.builtin.command: pwsh -v
+  changed_when: false
+
+# Module installation crashes under qemu, so it is skipped on arm64 (as before).
+- name: Install PowerShell modules
+  when: ansible_facts['architecture'] == 'x86_64'
+  block:
+    - name: Trust PSGallery
+      ansible.builtin.command: pwsh -nol -nop -c "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted"
+      changed_when: true
+
+    - name: Install module {{ item }}
+      ansible.builtin.command: >-
+        pwsh -nol -nop -c "$ProgressPreference = 'SilentlyContinue' ;
+        Install-Module -Name {{ item }} -Scope AllUsers -SkipPublisherCheck -Force"
+      changed_when: true
+      loop: [MarkdownPS, Pester, PSScriptAnalyzer]

@@ -1,0 +1,25 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - 'master'
+  pull_request:
+
+jobs:
+  ansible-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install ansible-lint and just
+        run: |
+          pipx install ansible-lint
+          pipx inject ansible-lint ansible-core
+          pipx install rust-just
+
+      - name: Install collections
+        run: ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Lint
+        run: just lint

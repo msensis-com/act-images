@@ -1,0 +1,52 @@
+---
+# Port of vcpkg.sh
+- name: Set vcpkg root
+  ansible.builtin.set_fact:
+    vcpkg_root: /usr/local/share/vcpkg
+
+- name: Set VCPKG_INSTALLATION_ROOT
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: set
+  vars:
+    envfile_name: VCPKG_INSTALLATION_ROOT
+    envfile_value: "{{ vcpkg_root }}"
+
+- name: Clone vcpkg
+  ansible.builtin.git:
+    repo: https://github.com/Microsoft/vcpkg
+    dest: "{{ vcpkg_root }}"
+    version: master
+
+- name: Bootstrap vcpkg
+  ansible.builtin.command: "{{ vcpkg_root }}/bootstrap-vcpkg.sh"
+  changed_when: true
+
+# workaround https://github.com/microsoft/vcpkg/issues/27786
+- name: Create vcpkg user config
+  ansible.builtin.file:
+    path: /root/.vcpkg/vcpkg.path.txt
+    state: touch
+    mode: "0644"
+
+- name: Integrate vcpkg
+  ansible.builtin.command: "{{ vcpkg_root }}/vcpkg integrate install"
+  changed_when: true
+
+- name: Make vcpkg writable by all users
+  ansible.builtin.file:
+    path: "{{ vcpkg_root }}"
+    mode: "0777"
+    recurse: true
+
+- name: Link vcpkg into /usr/local/bin
+  ansible.builtin.file:
+    src: "{{ vcpkg_root }}/vcpkg"
+    dest: /usr/local/bin/vcpkg
+    state: link
+    force: true
+
+- name: Remove root vcpkg config
+  ansible.builtin.file:
+    path: /root/.vcpkg
+    state: absent

@@ -1,0 +1,48 @@
+---
+- name: Resolve Go {{ go_spec }}
+  ansible.builtin.set_fact:
+    go_version: "{{ (go_manifest.json | selectattr('version', 'match', go_spec) | first).version }}"
+
+- name: Set Go path for {{ go_version }}
+  ansible.builtin.set_fact:
+    go_root: "{{ act_toolsdirectory }}/go/{{ go_version }}/{{ arch.toolcache }}"
+
+- name: Create {{ go_root }}
+  ansible.builtin.file:
+    path: "{{ go_root }}"
+    state: directory
+    mode: "0777"
+
+- name: Download Go {{ go_version }}
+  ansible.builtin.get_url:
+    url: "https://golang.org/dl/go{{ go_version }}.linux-{{ arch.go }}.tar.gz"
+    dest: /tmp/go.tar.gz
+    mode: "0644"
+
+- name: Extract Go {{ go_version }}
+  ansible.builtin.command:
+    cmd: tar -zxf /tmp/go.tar.gz --strip-components=1 -C {{ go_root }}
+    creates: "{{ go_root }}/bin/go"
+
+- name: Remove Go tarball
+  ansible.builtin.file:
+    path: /tmp/go.tar.gz
+    state: absent
+
+- name: Mark Go complete in tool cache {{ go_version }}
+  ansible.builtin.file:
+    path: "{{ go_root }}.complete"
+    state: touch
+    mode: "0644"
+
+- name: Show Go version
+  ansible.builtin.command: "{{ go_root }}/bin/go version"
+  changed_when: false
+
+- name: Link default Go binaries into /usr/bin
+  ansible.builtin.file:
+    src: "{{ go_root }}/bin/{{ item }}"
+    dest: "/usr/bin/{{ item }}"
+    state: link
+  loop: [go, gofmt]
+  when: go_spec == go_toolset.default

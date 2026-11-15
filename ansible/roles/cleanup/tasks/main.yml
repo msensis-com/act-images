@@ -1,0 +1,6 @@
+---
+- name: Clean apt cache, logs and temp files
+  ansible.builtin.shell: |
+    apt-get clean
+    rm -rf /var/cache/* /var/log/* /var/lib/apt/lists/* /tmp/* || echo 'Failed to delete directories'
+  changed_when: true

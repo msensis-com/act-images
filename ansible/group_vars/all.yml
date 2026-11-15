@@ -1,0 +1,58 @@
+---
+# Shared paths (kept identical to the previous shell-based images)
+act_toolsdirectory: /opt/acttoolcache
+agent_toolsdirectory: /opt/hostedtoolcache
+imagegeneration_dir: /imagegeneration
+toolset_path: "{{ imagegeneration_dir }}/toolset.json"
+
+# Node.js versions installed into the act image; NODE="20 24" style override via -e node_versions_str=...
+node_versions: "{{ (node_versions_str | default('20 24', true)).split() }}"
+# This version is put first on PATH (latest LTS)
+node_default: "24"
+
+# Non-root user of the runner image (uid 1001); its admin gets uid/gid 1000
+runner_user: runner
+
+# Optional token for api.github.com requests (avoids unauthenticated rate limits in CI).
+# Only used as a request header during the build, never written into the image.
+github_token: "{{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+github_api_headers: "{{ {'Authorization': 'Bearer ' ~ github_token} if github_token else {} }}"
+
+# Per-architecture names used by upstream download URLs / toolcache layouts
+arch_map:
+  x86_64:
+    node: x64
+    toolcache: x64
+    go: amd64
+    java: amd64
+    gh: amd64
+    pwsh: x64
+    yq: amd64
+    env: X64
+  aarch64:
+    node: arm64
+    toolcache: arm64
+    go: arm64
+    java: arm64
+    gh: arm64
+    pwsh: arm64
+    yq: arm64
+    env: ARM64
+arch: "{{ arch_map[ansible_facts['architecture']] }}"
+
+# Which roles make up each image TYPE (applied in order, on top of FROM)
+image_roles:
+  act: [act, yq]
+  runner: [runner]
+  go: [go]
+  js: [js]
+  pwsh: [pwsh]
+  rust: [rust]
+  dotnet: [dotnet]
+  java-tools: [java_tools]
+  gh: [gh]
+  custom: "{{ custom_roles[ansible_facts['architecture']] }}"
+
+custom_roles:
+  x86_64: [apt_custom, basic, gh, pwsh, go, js, rust, vcpkg, dotnet]
+  aarch64: [apt_custom, basic, gh, pwsh, go, js, dotnet]

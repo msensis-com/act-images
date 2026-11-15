@@ -1,0 +1,43 @@
+---
+# Port of dotnet.sh: .NET SDKs (STS + LTS channels) into the act tool cache.
+- name: Set .NET root
+  ansible.builtin.set_fact:
+    dotnet_root: "{{ act_toolsdirectory }}/dotnet"
+
+- name: Download dotnet-install.sh
+  ansible.builtin.get_url:
+    url: https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh
+    dest: /tmp/dotnet-install.sh
+    mode: "0755"
+
+- name: Install .NET SDK channel {{ item }}
+  ansible.builtin.command: bash /tmp/dotnet-install.sh --install-dir {{ dotnet_root }} --no-path --channel {{ item }}
+  changed_when: true
+  loop: [STS, LTS]
+
+- name: Remove dotnet-install.sh
+  ansible.builtin.file:
+    path: /tmp/dotnet-install.sh
+    state: absent
+
+- name: Set DOTNET_ROOT
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: set
+  vars:
+    envfile_name: DOTNET_ROOT
+    envfile_value: "{{ dotnet_root }}"
+
+- name: Add .NET to PATH
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: prepend_path
+  vars:
+    envfile_path: "{{ dotnet_root }}"
+
+- name: Show .NET info
+  ansible.builtin.shell: dotnet --version && dotnet --info
+  environment:
+    DOTNET_ROOT: "{{ dotnet_root }}"
+    PATH: "{{ dotnet_root }}:{{ envfile_env.PATH }}"
+  changed_when: false

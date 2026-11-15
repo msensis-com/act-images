@@ -1,0 +1,7 @@
+---
+# Usage: include_role envfile/set with vars envfile_name, envfile_value
+- name: Set in /etc/environment {{ envfile_name }}
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    regexp: "^{{ envfile_name }}="
+    line: "{{ envfile_name }}={{ envfile_value }}"
