@@ -79,18 +79,18 @@ jobs:
           RUNNER: runner
         run: just ci runner ${{ matrix.TAG }} ghcr.io/${{ env.SLUG }}:act-${{ matrix.TAG }}-${{ env.PART_TAG }}
 
-      - if: ${{ !env.SKIP_TEST }}
+      - if: env.SKIP_TEST != 'true'
         uses: actions/setup-go@v7
         with:
           go-version: '^1.16'
 
-      - if: ${{ !env.SKIP_TEST }}
+      - if: env.SKIP_TEST != 'true'
         uses: actions/checkout@v7
         with:
           repository: nektos/act
           path: act
 
-      - if: ${{ !env.SKIP_TEST }}
+      - if: env.SKIP_TEST != 'true'
         env:
           ACT_SRC: ${{ github.workspace }}/act
         run: just test ghcr.io/${{ env.SLUG }}:act-${{ matrix.TAG }}-${{ env.PART_TAG }}
