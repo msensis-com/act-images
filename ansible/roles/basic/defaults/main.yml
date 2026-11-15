@@ -1,0 +1,4 @@
+---
+# Virtual package names from the runner-images toolset -> concrete provider installed on GitHub's hosted runners
+basic_package_providers:
+  netcat: netcat-openbsd

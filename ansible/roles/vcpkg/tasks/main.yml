@@ -23,6 +23,12 @@
   changed_when: true
 
 # workaround https://github.com/microsoft/vcpkg/issues/27786
+- name: Create vcpkg user config directory
+  ansible.builtin.file:
+    path: /root/.vcpkg
+    state: directory
+    mode: "0755"
+
 - name: Create vcpkg user config
   ansible.builtin.file:
     path: /root/.vcpkg/vcpkg.path.txt

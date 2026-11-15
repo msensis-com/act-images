@@ -1,7 +1,7 @@
 ---
 - name: Resolve Go {{ go_spec }}
   ansible.builtin.set_fact:
-    go_version: "{{ (go_manifest.json | selectattr('version', 'match', go_spec) | first).version }}"
+    go_version: "{{ (go_manifest.content | from_json | selectattr('version', 'match', go_spec) | first).version }}"
 
 - name: Set Go path for {{ go_version }}
   ansible.builtin.set_fact:
