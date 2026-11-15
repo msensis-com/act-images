@@ -1,0 +1,16 @@
+---
+# Loads the actions/runner-images toolset.json that the act image downloaded.
+- name: Check for toolset.json
+  ansible.builtin.stat:
+    path: "{{ toolset_path }}"
+  register: toolset_stat
+
+- name: Read toolset.json
+  ansible.builtin.slurp:
+    src: "{{ toolset_path }}"
+  register: toolset_raw
+  when: toolset_stat.stat.exists
+
+- name: Parse toolset.json
+  ansible.builtin.set_fact:
+    toolset_data: "{{ ((toolset_raw.content | default('') | b64decode | trim) or '{}') | from_json }}"

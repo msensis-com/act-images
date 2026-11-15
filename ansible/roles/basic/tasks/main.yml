@@ -1,0 +1,27 @@
+---
+# Port of basic.sh: common CLI utilities and dev packages listed in the runner-images toolset.
+- name: Load toolset
+  ansible.builtin.include_role:
+    name: toolset
+
+# The toolset is written for GitHub's full runner image, where e.g. netcat-openbsd is preinstalled,
+# so apt-get resolves virtual names like `netcat` to it. buildpack-deps has no provider installed,
+# so virtual names are mapped to the provider the hosted runners ship (see basic_package_providers).
+# lib32z1 is not available on arm64.
+- name: Select toolset apt packages
+  vars:
+    basic_raw: >-
+      {{ (toolset_data.apt.common_packages | default([])
+          | reject('in', [] if ansible_facts['architecture'] == 'x86_64' else ['lib32z1']) | list)
+         + (toolset_data.apt.cmd_packages | default([])) }}
+    basic_lookup: "{{ dict(basic_raw | zip(basic_raw)) | combine(basic_package_providers) }}"
+  ansible.builtin.set_fact:
+    basic_packages: "{{ basic_raw | map('extract', basic_lookup) | unique }}"
+
+- name: Install toolset apt packages
+  ansible.builtin.apt:
+    name: "{{ basic_packages }}"
+    state: latest
+    update_cache: true
+    install_recommends: false
+  when: basic_packages | length > 0

@@ -1,0 +1,9 @@
+---
+- name: Run role {{ role_name }}
+  ansible.builtin.include_role:
+    name: "{{ role_name }}"
+
+- name: Reload /etc/environment after {{ role_name }}
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: load

@@ -1,0 +1,6 @@
+---
+skip_list:
+  # tar/unzip/git config/apt-get clean are used on purpose (strip-components, creates:, parity with the old scripts)
+  - command-instead-of-module
+  # Images are rebuilt weekly to pick up current packages; `apt-get install` semantics upgrade preinstalled ones
+  - package-latest

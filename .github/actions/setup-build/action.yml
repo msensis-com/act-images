@@ -1,0 +1,64 @@
+name: Set up image build
+description: >-
+  Installs buildah (+ netavark, crun), QEMU, Ansible and just, and exports
+  SLUG (lowercased), PART_TAG and PUSH_DEFAULT for the justfile. Requires the repository to be checked out.
+
+runs:
+  using: composite
+  steps:
+    - name: Disable apparmor restrictions
+      shell: sh
+      run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+    - uses: actions/setup-go@v7
+      with:
+        go-version: '>=1.21.0'
+
+    - name: Setup buildah
+      shell: sh
+      working-directory: ${{ runner.temp }}
+      run: |
+        sudo apt-get -y -qq update
+        sudo apt-get -y install bats btrfs-progs git go-md2man golang libapparmor-dev libglib2.0-dev libgpgme11-dev libseccomp-dev libselinux1-dev make skopeo
+        git clone https://github.com/containers/buildah buildah
+        git -C buildah checkout v1.35.0
+        make -C buildah buildah
+        sudo mkdir -p /usr/local/bin/
+        sudo cp "$PWD/buildah/bin"/* /usr/local/bin/
+        sudo apt install protobuf-compiler
+        git clone https://github.com/containers/netavark
+        make -C netavark/
+        sudo mkdir -p /usr/local/libexec/podman/
+        sudo cp "$PWD/netavark/bin"/* /usr/local/libexec/podman/
+        curl -L https://github.com/containers/crun/releases/download/1.14.3/crun-1.14.3-linux-amd64 --output crun
+        chmod +x crun
+        sudo cp crun /usr/local/bin/crun
+        echo "BUILDAH_RUNTIME=/usr/local/bin/crun" >> "$GITHUB_ENV"
+
+        sudo apt-get install -y passt
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v4
+
+    - name: Install Ansible and just
+      shell: bash
+      run: |
+        pipx install ansible-core
+        pipx install rust-just
+        ansible-galaxy collection install -r ansible/requirements.yml
+
+    - name: Export SLUG, PART_TAG and PUSH_DEFAULT
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+      run: |
+        echo "SLUG=${SLUG,,}" | tee -a "$GITHUB_ENV"
+        if [[ "$EVENT" == schedule || "$EVENT" == workflow_dispatch ]]; then
+          echo "PART_TAG=$(date +%Y%m%d)" | tee -a "$GITHUB_ENV"
+        else
+          echo "PART_TAG=dev" | tee -a "$GITHUB_ENV"
+        fi
+        # Un-suffixed tags (act-24.04, act-latest) are only pushed by scheduled / manual runs, never under nektos/act
+        if [[ "$EVENT" != pull_request && "$EVENT" != push && -z "${ACT:-}" ]]; then
+          echo "PUSH_DEFAULT=1" | tee -a "$GITHUB_ENV"
+        fi

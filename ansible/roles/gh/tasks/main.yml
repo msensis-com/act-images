@@ -1,0 +1,24 @@
+---
+# Port of gh.sh: latest GitHub CLI .deb.
+- name: Look up latest GitHub CLI release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/cli/cli/releases/latest
+    headers: "{{ github_api_headers }}"
+  register: gh_release
+
+- name: Pick GitHub CLI package
+  ansible.builtin.set_fact:
+    gh_deb_url: >-
+      {{ gh_release.json.assets | map(attribute='browser_download_url')
+         | select('search', 'linux') | select('search', arch.gh) | select('search', '\.deb')
+         | first }}
+
+- name: Download GitHub CLI
+  ansible.builtin.get_url:
+    url: "{{ gh_deb_url }}"
+    dest: /tmp/gh.deb
+    mode: "0644"
+
+- name: Install GitHub CLI
+  ansible.builtin.apt:
+    deb: /tmp/gh.deb

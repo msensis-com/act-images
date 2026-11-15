@@ -1,0 +1,7 @@
+---
+# Usage: include_role envfile/prepend_path with var envfile_path
+- name: Prepend to PATH in /etc/environment {{ envfile_path }}
+  ansible.builtin.replace:
+    path: /etc/environment
+    regexp: "^PATH="
+    replace: "PATH={{ envfile_path }}:"

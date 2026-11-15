@@ -1,0 +1,52 @@
+---
+- name: Set JDK paths for {{ java_version }}
+  ansible.builtin.set_fact:
+    java_tools_home: "/usr/lib/jvm/temurin-{{ java_version }}-jdk-{{ arch.java }}"
+    java_tools_is_default: "{{ java_version | string == toolset_data.java.default | string }}"
+
+- name: Install Temurin JDK {{ java_version }}
+  ansible.builtin.apt:
+    state: latest
+    name: "temurin-{{ java_version }}-jdk"
+    update_cache: true
+
+# Register the JDK in the act tool cache the way actions/setup-java expects
+- name: Register JDK in tool cache {{ java_version }}
+  ansible.builtin.shell: |
+    set -o pipefail
+    full=$(grep "^SEMANTIC" "{{ java_tools_home }}/release" | cut -d "=" -f 2 | tr -d '"' | tr "+" "-")
+    # No semver in the release file: extract it from -fullversion
+    [[ -z "$full" ]] && full=$("{{ java_tools_home }}/bin/java" -fullversion 2>&1 | tr -d '"' | tr "+" "-" | awk '{print $4}')
+    # Convert non-valid semver like 11.0.14.1-9 -> 11.0.14-9 (adoptium/temurin-build#2248)
+    [[ "$full" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]] && full=$(echo "$full" | sed -E 's/\.[0-9]+-/-/')
+    dir="{{ act_toolsdirectory }}/Java_Temurin-Hotspot_jdk/$full"
+    mkdir -p "$dir"
+    touch "$dir/{{ arch.toolcache }}.complete"
+    ln -sfn "{{ java_tools_home }}" "$dir/{{ arch.toolcache }}"
+    chmod -R 777 /usr/lib/jvm
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Set JAVA_HOME and default java alternative
+  when: java_tools_is_default
+  block:
+    - name: Set JAVA_HOME
+      ansible.builtin.include_role:
+        name: envfile
+        tasks_from: set
+      vars:
+        envfile_name: JAVA_HOME
+        envfile_value: "{{ java_tools_home }}"
+
+    - name: Select default java alternative
+      ansible.builtin.command: update-java-alternatives -s {{ java_tools_home }}
+      changed_when: true
+
+- name: Set versioned JAVA_HOME {{ java_version }}
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: set
+  vars:
+    envfile_name: "JAVA_HOME_{{ java_version }}_{{ arch.env }}"
+    envfile_value: "{{ java_tools_home }}"

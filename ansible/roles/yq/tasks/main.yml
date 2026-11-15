@@ -1,0 +1,25 @@
+---
+# Port of yq.sh: latest yq with checksum verification.
+- name: Set yq download names
+  ansible.builtin.set_fact:
+    yq_base_url: https://github.com/mikefarah/yq/releases/latest/download
+    yq_filename: "yq_linux_{{ arch.yq }}"
+
+- name: Fetch yq checksums
+  ansible.builtin.uri:
+    url: "{{ yq_base_url }}/checksums"
+    return_content: true
+  register: yq_checksums
+
+# The checksums file lists many hashes per file; the 19th field is SHA-256 (same as upstream runner-images).
+- name: Extract yq SHA-256
+  ansible.builtin.set_fact:
+    yq_sha256: >-
+      {{ (yq_checksums.content.splitlines() | select('match', yq_filename ~ ' ') | first).split()[18] }}
+
+- name: Install yq
+  ansible.builtin.get_url:
+    url: "{{ yq_base_url }}/{{ yq_filename }}"
+    dest: /usr/bin/yq
+    mode: "0755"
+    checksum: "sha256:{{ yq_sha256 }}"

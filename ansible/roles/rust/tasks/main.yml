@@ -1,0 +1,88 @@
+---
+# Port of rust.sh: rustup (stable, minimal) with rustfmt/clippy and a few cargo tools.
+- name: Set Rust paths
+  ansible.builtin.set_fact:
+    rust_rustup_home: /usr/share/rust/.rustup
+    rust_cargo_home: /usr/share/rust/.cargo
+
+- name: Install Rust build dependencies
+  ansible.builtin.apt:
+    state: latest
+    name: [build-essential, llvm, libssl-dev]
+    update_cache: true
+
+- name: Install Rust toolchain and tools
+  environment:
+    RUSTUP_HOME: "{{ rust_rustup_home }}"
+    CARGO_HOME: "{{ rust_cargo_home }}"
+    PATH: "{{ rust_cargo_home }}/bin:{{ envfile_env.PATH }}"
+  block:
+    - name: Install rustup
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain=stable --profile=minimal
+      args:
+        executable: /bin/bash
+        creates: "{{ rust_cargo_home }}/bin/rustup"
+
+    - name: Add rustfmt and clippy
+      ansible.builtin.command: rustup component add rustfmt clippy
+      changed_when: true
+
+    # Pinned to the commit of cargo-binstall v1.4.7 to prevent accidental problems
+    - name: Install cargo-binstall
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -L --proto '=https' --tlsv1.2 -sSf \
+          https://raw.githubusercontent.com/cargo-bins/cargo-binstall/f6a95fa733be466c0e66c360f52e1d6998e47f25/install-from-binstall-release.sh \
+          | bash
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Install cargo tools
+      ansible.builtin.command: cargo binstall -y bindgen-cli cbindgen cargo-audit cargo-outdated
+      changed_when: true
+
+    - name: Show rustup, cargo and rustc versions
+      ansible.builtin.shell: rustup -V && cargo -V && rustc -V
+      changed_when: false
+
+- name: Make Rust installation writable by all users
+  ansible.builtin.file:
+    path: /usr/share/rust
+    mode: "0777"
+    recurse: true
+
+- name: Remove cargo registry cache
+  ansible.builtin.file:
+    path: "{{ rust_cargo_home }}/registry"
+    state: absent
+
+- name: Add cargo to PATH
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: prepend_path
+  vars:
+    envfile_path: "{{ rust_cargo_home }}/bin"
+
+- name: Link ~/.cargo and ~/.rustup for root
+  ansible.builtin.file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    state: link
+    force: true
+  loop:
+    - { src: "{{ rust_cargo_home }}", dest: /root/.cargo }
+    - { src: "{{ rust_rustup_home }}", dest: /root/.rustup }
+
+- name: Set RUSTUP_HOME and CARGO_HOME
+  ansible.builtin.include_role:
+    name: envfile
+    tasks_from: set
+  vars:
+    envfile_name: "{{ item.0 }}"
+    envfile_value: "{{ item.1 }}"
+  loop:
+    - [RUSTUP_HOME, "{{ rust_rustup_home }}"]
+    - [CARGO_HOME, "{{ rust_cargo_home }}"]

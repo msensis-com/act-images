@@ -10,3 +10,6 @@ report
 
 # quick local actions for act
 .github/workflows/act.yml
+
+# nektos/act checkout used by `just test`
+.act-src

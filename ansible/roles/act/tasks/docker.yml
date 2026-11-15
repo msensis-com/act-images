@@ -1,0 +1,33 @@
+---
+- name: Add Microsoft package signing keys
+  ansible.builtin.shell: |
+    set -o pipefail
+    mkdir -p /usr/share/keyrings
+    wget -q https://packages.microsoft.com/keys/microsoft.asc -O - | gpg --dearmor > /usr/share/keyrings/microsoft.gpg
+    wget -q https://packages.microsoft.com/keys/microsoft-2025.asc -O - | gpg --dearmor >> /usr/share/keyrings/microsoft.gpg
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Add packages.microsoft.com repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/microsoft-prod.list
+    mode: "0644"
+    content: >
+      deb [signed-by=/usr/share/keyrings/microsoft.gpg]
+      https://packages.microsoft.com/ubuntu/{{ act_lsb_release }}/prod {{ act_codename }} main
+
+- name: Install moby engine, cli, buildx and compose
+  ansible.builtin.apt:
+    state: latest
+    update_cache: true
+    install_recommends: false
+    name:
+      - moby-engine
+      - moby-cli
+      - moby-buildx
+      - moby-compose
+
+- name: Show docker versions
+  ansible.builtin.shell: docker -v && docker buildx version
+  changed_when: false
