@@ -25,7 +25,6 @@ env:
   BUILD_REF: ${{ github.sha }}
   SLUG: ${{ github.repository_owner }}/ubuntu
   NODE: '20 24'
-  PLATFORMS: linux/amd64,linux/arm64
   SKIP_TEST: false
   PUSH_GHCR: ${{ github.repository == (github.event.pull_request.head.repo.full_name || github.repository) && '1' || '' }}
   # PUSH_QUAY: ${{ secrets.QUAY_USER && secrets.QUAY_TOKEN && '1' || '' }}
@@ -69,15 +68,31 @@ jobs:
         if: env.PUSH_DOCKER_HUB
         run: exec buildah login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_TOKEN }} docker.io
 
-      - name: Build and push act-${{ matrix.TAG }}
+      - name: Build act-${{ matrix.TAG }} (amd64)
         env:
           RUNNER: root
-        run: just ci act ${{ matrix.TAG }} docker.io/library/buildpack-deps:${{ matrix.TAG }}
+        run: just ci-build act ${{ matrix.TAG }} docker.io/library/buildpack-deps:${{ matrix.TAG }} linux/amd64
 
-      - name: Build and push runner-${{ matrix.TAG }}
+      - name: Build act-${{ matrix.TAG }} (arm64)
+        env:
+          RUNNER: root
+        run: just ci-build act ${{ matrix.TAG }} docker.io/library/buildpack-deps:${{ matrix.TAG }} linux/arm64
+
+      - name: Push act-${{ matrix.TAG }}
+        run: just ci-push act ${{ matrix.TAG }}
+
+      - name: Build runner-${{ matrix.TAG }} (amd64)
         env:
           RUNNER: runner
-        run: just ci runner ${{ matrix.TAG }} ghcr.io/${{ env.SLUG }}:act-${{ matrix.TAG }}-${{ env.PART_TAG }}
+        run: just ci-build runner ${{ matrix.TAG }} ghcr.io/${{ env.SLUG }}:act-${{ matrix.TAG }}-${{ env.PART_TAG }} linux/amd64
+
+      - name: Build runner-${{ matrix.TAG }} (arm64)
+        env:
+          RUNNER: runner
+        run: just ci-build runner ${{ matrix.TAG }} ghcr.io/${{ env.SLUG }}:act-${{ matrix.TAG }}-${{ env.PART_TAG }} linux/arm64
+
+      - name: Push runner-${{ matrix.TAG }}
+        run: just ci-push runner ${{ matrix.TAG }}
 
       - if: env.SKIP_TEST != 'true'
         uses: actions/setup-go@v7
@@ -89,6 +104,11 @@ jobs:
         with:
           repository: nektos/act
           path: act
+
+      # The tests pull the image with docker, which does not share buildah's registry login
+      - name: Login docker to GitHub Container Registry
+        if: env.SKIP_TEST != 'true'
+        run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - if: env.SKIP_TEST != 'true'
         env:
@@ -141,5 +161,11 @@ jobs:
         if: env.PUSH_DOCKER_HUB
         run: exec buildah login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_TOKEN }} docker.io
 
-      - name: Build and push ${{ matrix.TYPE }}-${{ matrix.TAG }}
-        run: just ci ${{ matrix.TYPE }} ${{ matrix.TAG }} ghcr.io/${{ env.SLUG }}:act-${{ matrix.TAG }}-${{ env.PART_TAG }}
+      - name: Build ${{ matrix.TYPE }}-${{ matrix.TAG }} (amd64)
+        run: just ci-build ${{ matrix.TYPE }} ${{ matrix.TAG }} ghcr.io/${{ env.SLUG }}:act-${{ matrix.TAG }}-${{ env.PART_TAG }} linux/amd64
+
+      - name: Build ${{ matrix.TYPE }}-${{ matrix.TAG }} (arm64)
+        run: just ci-build ${{ matrix.TYPE }} ${{ matrix.TAG }} ghcr.io/${{ env.SLUG }}:act-${{ matrix.TAG }}-${{ env.PART_TAG }} linux/arm64
+
+      - name: Push ${{ matrix.TYPE }}-${{ matrix.TAG }}
+        run: just ci-push ${{ matrix.TYPE }} ${{ matrix.TAG }}
