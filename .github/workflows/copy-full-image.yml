@@ -22,7 +22,7 @@ defaults:
 jobs:
   copy:
     name: copy image ${{ matrix.copy.src }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: true
       max-parallel: 1
