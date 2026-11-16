@@ -95,15 +95,16 @@ jobs:
         run: just ci-push runner ${{ matrix.TAG }}
 
       - if: env.SKIP_TEST != 'true'
-        uses: actions/setup-go@v7
-        with:
-          go-version: '^1.16'
-
-      - if: env.SKIP_TEST != 'true'
         uses: actions/checkout@v7
         with:
           repository: nektos/act
           path: act
+
+      - if: env.SKIP_TEST != 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: act/go.mod
+          cache-dependency-path: act/go.sum
 
       # The tests pull the image with docker, which does not share buildah's registry login
       - name: Login docker to GitHub Container Registry
