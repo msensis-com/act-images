@@ -69,6 +69,9 @@
       - python3-pip
       - python3-venv
       - pipx
+      # ICU is needed by .NET (and other runtimes). buildpack-deps <= 24.04 shipped it
+      # by accident (via libxml2); 26.04 does not, see catthehacker/docker_images#169.
+      - libicu-dev
 
 - name: Link python to python3
   ansible.builtin.file:
