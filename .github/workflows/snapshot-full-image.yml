@@ -59,6 +59,19 @@ jobs:
       - name: Show runner image version
         run: grep -E '^(ImageOS|ImageVersion)=' /etc/environment
 
+      # Exercise the whole upload protocol with a tiny image (private staging package) before
+      # spending ~an hour on tar, so registry/protocol problems fail within seconds.
+      - name: Smoke-test registry upload
+        env:
+          IMAGE_REPO: ${{ github.repository_owner }}/ubuntu-staging
+        run: |
+          smoke="$RUNNER_TEMP/smoke"
+          mkdir -p "$smoke/data"
+          date > "$smoke/data/timestamp"
+          tar -C "$smoke/data" -c . | node .github/scripts/ghcr-stream.mjs layer smoke "$smoke/layer.json"
+          node .github/scripts/ghcr-stream.mjs manifest "$smoke/layer.json" "snapshot-smoketest-${{ matrix.VERSION }}-${{ matrix.ARCH }}"
+          rm -rf "$smoke"
+
       - name: Layer base
         run: |
           .github/scripts/snapshot-layer.sh base --no-recursion /run /run/user /run/user/* --recursion \

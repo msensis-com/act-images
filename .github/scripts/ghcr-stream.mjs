@@ -75,7 +75,12 @@ async function uploadStream(body, finalDigest) {
   });
   const commit = location(patched);
   commit.searchParams.set('digest', await finalDigest());
-  await retry('commit upload', () => request('PUT', commit, { body: '', expect: [201] }));
+  // ghcr.io rejects the commit unless it is typed like the uploaded data (a string body defaults to text/plain)
+  await retry('commit upload', () => request('PUT', commit, {
+    body: '',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    expect: [201],
+  }));
 }
 
 async function uploadBuffer(buf) {
