@@ -156,6 +156,12 @@
 - name: Install docker (moby) from packages.microsoft.com
   ansible.builtin.include_tasks: docker.yml
 
+- name: Check that the default Node.js version is going to be installed
+  ansible.builtin.assert:
+    that: node_default | string in node_versions | map('string')
+    fail_msg: "node_default {{ node_default }} is not in node_versions {{ node_versions }}; PATH would have no node"
+    quiet: true
+
 - name: Fetch Node.js release index
   ansible.builtin.uri:
     url: https://nodejs.org/download/release/index.json

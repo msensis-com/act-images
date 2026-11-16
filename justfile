@@ -54,7 +54,8 @@ build-platform type from platform manifest=("localhost/act-images/" + type + ":l
     buildah from --name "$ctr" --platform "{{ platform }}" --format docker \
         --ulimit nofile=4096:4096 "{{ from }}"
 
-    ansible_args=(-e "image_type={{ type }}" -e "node_versions_str=${NODE:-}")
+    # quoted: NODE="20 24" contains a space, which Ansible's key=value parsing would split
+    ansible_args=(-e "image_type={{ type }}" -e "node_versions_str='${NODE:-}'")
     if [[ -n "${RUNNER:-}" && "${RUNNER}" != root ]]; then
         ansible_args+=(-e "runner_user=$RUNNER")
     fi
