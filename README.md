@@ -1,8 +1,12 @@
-# Docker images
+# act images
 
-[![Scheduled build (Ubuntu)](https://github.com/catthehacker/docker_images/actions/workflows/build-ubuntu.yml/badge.svg?event=schedule)](https://github.com/catthehacker/docker_images/actions/workflows/build-ubuntu.yml)
-[![On-demand build (Ubuntu)](https://github.com/catthehacker/docker_images/actions/workflows/build-ubuntu.yml/badge.svg?event=workflow_dispatch)](https://github.com/catthehacker/docker_images/actions/workflows/build-ubuntu.yml)
-[![Linter](https://github.com/catthehacker/docker_images/actions/workflows/lint.yml/badge.svg)](https://github.com/catthehacker/docker_images/actions/workflows/lint.yml)
+[![Scheduled build (Ubuntu)](https://github.com/msensis-com/act-images/actions/workflows/build-ubuntu.yml/badge.svg?event=schedule)](https://github.com/msensis-com/act-images/actions/workflows/build-ubuntu.yml)
+[![On-demand build (Ubuntu)](https://github.com/msensis-com/act-images/actions/workflows/build-ubuntu.yml/badge.svg?event=workflow_dispatch)](https://github.com/msensis-com/act-images/actions/workflows/build-ubuntu.yml)
+[![Linter](https://github.com/msensis-com/act-images/actions/workflows/lint.yml/badge.svg)](https://github.com/msensis-com/act-images/actions/workflows/lint.yml)
+
+Ubuntu images for running GitHub Actions workflows locally with [nektos/act], published to `ghcr.io/msensis-com/ubuntu`.
+
+Originally forked from [catthehacker/docker_images](https://github.com/catthehacker/docker_images) and maintained independently since; the build was rewritten from Dockerfile + shell scripts to Ansible.
 
 ## When updates will be applied to images
 
@@ -23,6 +27,8 @@ buildah from --platform <p> <FROM>                    # e.g. buildpack-deps:24.0
   -> buildah config --env <each line of /etc/environment> --label ...
   -> buildah commit, then add to a multi-arch manifest list (linux/amd64 + linux/arm64)
 ```
+
+In CI ([`build-ubuntu.yml`](./.github/workflows/build-ubuntu.yml)) every architecture is built natively (`ubuntu-26.04` / `ubuntu-26.04-arm`) and pushed to a private staging package; publish jobs then combine amd64 + arm64 into the tags listed below. Scheduled builds run weekly and also push dated tags (e.g. `act-24.04-20261115`); pushes to `master` publish `*-dev` tags.
 
 - [`ansible/group_vars/all.yml`](./ansible/group_vars/all.yml) maps each image type to its roles (`image_roles`)
 - [`ansible/roles/`](./ansible/roles) contains one role per tool set (`act`, `runner`, `go`, `js`, `pwsh`, `rust`, `dotnet`, `java_tools`, `gh`, ...)
@@ -46,64 +52,64 @@ just lint
 - [ChristopherHX/runner-image-blobs](https://github.com/ChristopherHX/runner-image-blobs) GitHub Actions Hosted runner image copy containing almost all possible tools (image is extremely big, 20GB compressed, ~60GB extracted)
   - A tar backup of the GitHub Hosted Runners are uploaded once a week via a custom docker image upload script in runner-image-blobs repository
   - Synced by cron job `.github/workflows/copy-full-image.yml` to the following tags
-  - You can verify if the Image is still updated regulary by inspecting the dates in `docker buildx imagetools inspect catthehacker/ubuntu:full-latest --format "{{ json . }}"`
+  - You can verify if the Image is still updated regulary by inspecting the dates in `docker buildx imagetools inspect ghcr.io/msensis-com/ubuntu:full-latest --format "{{ json . }}"`
     - The friendly tag name version in the output can be looked up here https://github.com/actions/runner-images/releases to find out more about the sources
   - available tags are
-    - `ghcr.io/catthehacker/ubuntu:full-latest` (aka `full-26.04`)
-    - `ghcr.io/catthehacker/ubuntu:full-26.04`
-    - `ghcr.io/catthehacker/ubuntu:full-24.04`
-    - `ghcr.io/catthehacker/ubuntu:full-22.04`
+    - `ghcr.io/msensis-com/ubuntu:full-latest` (aka `full-26.04`)
+    - `ghcr.io/msensis-com/ubuntu:full-26.04`
+    - `ghcr.io/msensis-com/ubuntu:full-24.04`
+    - `ghcr.io/msensis-com/ubuntu:full-22.04`
 
 - [`act`](./ansible/roles/act/tasks/main.yml) - image used in [github.com/nektos/act][nektos/act] as medium size image retaining compatibility with most actions while maintaining small size
-  - `ghcr.io/catthehacker/ubuntu:act-22.04`
-  - `ghcr.io/catthehacker/ubuntu:act-24.04`
-  - `ghcr.io/catthehacker/ubuntu:act-26.04`
-  - `ghcr.io/catthehacker/ubuntu:act-latest` (aka `act-26.04`)
-- [`runner`](./ansible/roles/runner/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `runner` as user instead of `root`
-  - `ghcr.io/catthehacker/ubuntu:runner-22.04`
-  - `ghcr.io/catthehacker/ubuntu:runner-24.04`
-  - `ghcr.io/catthehacker/ubuntu:runner-26.04`
-  - `ghcr.io/catthehacker/ubuntu:runner-latest` (aka `runner-26.04`)
-- [`js`](./ansible/roles/js/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `js` tools installed (`yarn`, `nvm`, `node` v20/v24, `pnpm`, `grunt`, etc.)
-  - `ghcr.io/catthehacker/ubuntu:js-22.04`
-  - `ghcr.io/catthehacker/ubuntu:js-24.04`
-  - `ghcr.io/catthehacker/ubuntu:js-26.04`
-  - `ghcr.io/catthehacker/ubuntu:js-latest` (aka `js-26.04`)
-- [`rust`](./ansible/roles/rust/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `rust` tools installed (`rustfmt`, `clippy`, `cbindgen`, etc.)
-  - `ghcr.io/catthehacker/ubuntu:rust-22.04`
-  - `ghcr.io/catthehacker/ubuntu:rust-24.04`
-  - `ghcr.io/catthehacker/ubuntu:rust-26.04`
-  - `ghcr.io/catthehacker/ubuntu:rust-latest` (aka `rust-26.04`)
-- [`pwsh`](./ansible/roles/pwsh/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `pwsh` tools and modules installed
-  - `ghcr.io/catthehacker/ubuntu:pwsh-22.04`
-  - `ghcr.io/catthehacker/ubuntu:pwsh-24.04`
-  - `ghcr.io/catthehacker/ubuntu:pwsh-26.04`
-  - `ghcr.io/catthehacker/ubuntu:pwsh-latest` (aka `pwsh-26.04`)
-- [`go`](./ansible/roles/go/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `go` tools installed
-  - `ghcr.io/catthehacker/ubuntu:go-22.04`
-  - `ghcr.io/catthehacker/ubuntu:go-24.04`
-  - `ghcr.io/catthehacker/ubuntu:go-26.04`
-  - `ghcr.io/catthehacker/ubuntu:go-latest` (aka `go-26.04`)
-- [`dotnet`](./ansible/roles/dotnet/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with `.NET` tools installed
-  - `ghcr.io/catthehacker/ubuntu:dotnet-22.04`
-  - `ghcr.io/catthehacker/ubuntu:dotnet-24.04`
-  - `ghcr.io/catthehacker/ubuntu:dotnet-26.04`
-  - `ghcr.io/catthehacker/ubuntu:dotnet-latest` (aka `dotnet-26.04`)
-- [`java-tools`](./ansible/roles/java_tools/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with Java tools installed
-  - `ghcr.io/catthehacker/ubuntu:java-tools-22.04`
-  - `ghcr.io/catthehacker/ubuntu:java-tools-24.04`
-  - `ghcr.io/catthehacker/ubuntu:java-tools-26.04`
-  - `ghcr.io/catthehacker/ubuntu:java-tools-latest` (aka `java-tools-26.04`)
-- [`gh`](./ansible/roles/gh/tasks/main.yml) - `ghcr.io/catthehacker/ubuntu:act-*` but with GitHub CLI tools installed
-  - `ghcr.io/catthehacker/ubuntu:gh-22.04`
-  - `ghcr.io/catthehacker/ubuntu:gh-24.04`
-  - `ghcr.io/catthehacker/ubuntu:gh-26.04`
-  - `ghcr.io/catthehacker/ubuntu:gh-latest` (aka `gh-26.04`)
-- [`custom`](./ansible/group_vars/all.yml) (roles listed under `custom_roles`) - `ghcr.io/catthehacker/ubuntu:act-*` but with custom tools installed
-  - `ghcr.io/catthehacker/ubuntu:custom-22.04`
-  - `ghcr.io/catthehacker/ubuntu:custom-24.04`
-  - `ghcr.io/catthehacker/ubuntu:custom-26.04`
-  - `ghcr.io/catthehacker/ubuntu:custom-latest` (aka `custom-26.04`)
+  - `ghcr.io/msensis-com/ubuntu:act-22.04`
+  - `ghcr.io/msensis-com/ubuntu:act-24.04`
+  - `ghcr.io/msensis-com/ubuntu:act-26.04`
+  - `ghcr.io/msensis-com/ubuntu:act-latest` (aka `act-26.04`)
+- [`runner`](./ansible/roles/runner/tasks/main.yml) - `ghcr.io/msensis-com/ubuntu:act-*` but with `runner` as user instead of `root`
+  - `ghcr.io/msensis-com/ubuntu:runner-22.04`
+  - `ghcr.io/msensis-com/ubuntu:runner-24.04`
+  - `ghcr.io/msensis-com/ubuntu:runner-26.04`
+  - `ghcr.io/msensis-com/ubuntu:runner-latest` (aka `runner-26.04`)
+- [`js`](./ansible/roles/js/tasks/main.yml) - `ghcr.io/msensis-com/ubuntu:act-*` but with `js` tools installed (`yarn`, `nvm`, `node` v20/v24, `pnpm`, `grunt`, etc.)
+  - `ghcr.io/msensis-com/ubuntu:js-22.04`
+  - `ghcr.io/msensis-com/ubuntu:js-24.04`
+  - `ghcr.io/msensis-com/ubuntu:js-26.04`
+  - `ghcr.io/msensis-com/ubuntu:js-latest` (aka `js-26.04`)
+- [`rust`](./ansible/roles/rust/tasks/main.yml) - `ghcr.io/msensis-com/ubuntu:act-*` but with `rust` tools installed (`rustfmt`, `clippy`, `cbindgen`, etc.)
+  - `ghcr.io/msensis-com/ubuntu:rust-22.04`
+  - `ghcr.io/msensis-com/ubuntu:rust-24.04`
+  - `ghcr.io/msensis-com/ubuntu:rust-26.04`
+  - `ghcr.io/msensis-com/ubuntu:rust-latest` (aka `rust-26.04`)
+- [`pwsh`](./ansible/roles/pwsh/tasks/main.yml) - `ghcr.io/msensis-com/ubuntu:act-*` but with `pwsh` tools and modules installed
+  - `ghcr.io/msensis-com/ubuntu:pwsh-22.04`
+  - `ghcr.io/msensis-com/ubuntu:pwsh-24.04`
+  - `ghcr.io/msensis-com/ubuntu:pwsh-26.04`
+  - `ghcr.io/msensis-com/ubuntu:pwsh-latest` (aka `pwsh-26.04`)
+- [`go`](./ansible/roles/go/tasks/main.yml) - `ghcr.io/msensis-com/ubuntu:act-*` but with `go` tools installed
+  - `ghcr.io/msensis-com/ubuntu:go-22.04`
+  - `ghcr.io/msensis-com/ubuntu:go-24.04`
+  - `ghcr.io/msensis-com/ubuntu:go-26.04`
+  - `ghcr.io/msensis-com/ubuntu:go-latest` (aka `go-26.04`)
+- [`dotnet`](./ansible/roles/dotnet/tasks/main.yml) - `ghcr.io/msensis-com/ubuntu:act-*` but with `.NET` tools installed
+  - `ghcr.io/msensis-com/ubuntu:dotnet-22.04`
+  - `ghcr.io/msensis-com/ubuntu:dotnet-24.04`
+  - `ghcr.io/msensis-com/ubuntu:dotnet-26.04`
+  - `ghcr.io/msensis-com/ubuntu:dotnet-latest` (aka `dotnet-26.04`)
+- [`java-tools`](./ansible/roles/java_tools/tasks/main.yml) - `ghcr.io/msensis-com/ubuntu:act-*` but with Java tools installed
+  - `ghcr.io/msensis-com/ubuntu:java-tools-22.04`
+  - `ghcr.io/msensis-com/ubuntu:java-tools-24.04`
+  - `ghcr.io/msensis-com/ubuntu:java-tools-26.04`
+  - `ghcr.io/msensis-com/ubuntu:java-tools-latest` (aka `java-tools-26.04`)
+- [`gh`](./ansible/roles/gh/tasks/main.yml) - `ghcr.io/msensis-com/ubuntu:act-*` but with GitHub CLI tools installed
+  - `ghcr.io/msensis-com/ubuntu:gh-22.04`
+  - `ghcr.io/msensis-com/ubuntu:gh-24.04`
+  - `ghcr.io/msensis-com/ubuntu:gh-26.04`
+  - `ghcr.io/msensis-com/ubuntu:gh-latest` (aka `gh-26.04`)
+- [`custom`](./ansible/group_vars/all.yml) (roles listed under `custom_roles`) - `ghcr.io/msensis-com/ubuntu:act-*` but with custom tools installed
+  - `ghcr.io/msensis-com/ubuntu:custom-22.04`
+  - `ghcr.io/msensis-com/ubuntu:custom-24.04`
+  - `ghcr.io/msensis-com/ubuntu:custom-26.04`
+  - `ghcr.io/msensis-com/ubuntu:custom-latest` (aka `custom-26.04`)
 
 ## [`ubuntu-20.04` has been deprecated and images for that environment will not be updated anymore](https://github.com/actions/runner-images/pull/11748)
 
@@ -113,4 +119,3 @@ just lint
 
 [nektos/act]: https://github.com/nektos/act
 [actions/virtual-environments]: https://github.com/actions/virtual-environments
-[catthehacker/virtual-environments-fork]: https://github.com/catthehacker/virtual-environments-fork/tree/master/images/linux
