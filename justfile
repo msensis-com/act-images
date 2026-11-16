@@ -203,11 +203,13 @@ ci type version from:
 lint:
     cd ansible && ansible-lint
 
-# Run nektos/act's test suite against IMAGE (clones act into ACT_SRC, default .act-src)
+# Run nektos/act's test suite against IMAGE (clones act into ACT_SRC, default .act-src).
+# Skipped by default (ACT_TEST_SKIP): tests of act's own multi-platform docker handling, which fail on
+# GitHub's runner docker daemon independent of the image (only one platform of a tag is kept locally).
 test image:
     #!/usr/bin/env bash
     set -euo pipefail
     src="${ACT_SRC:-{{ justfile_directory() }}/.act-src}"
     if [[ ! -d "$src" ]]; then git clone --depth 1 https://github.com/nektos/act "$src"; fi
     cd "$src"
-    ACT_TEST_IMAGE="{{ image }}" go test ./...
+    ACT_TEST_IMAGE="{{ image }}" go test ./... -skip "${ACT_TEST_SKIP-^(TestImageExistsLocally|TestRunDifferentArchitecture)$}"

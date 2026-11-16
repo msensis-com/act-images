@@ -223,10 +223,6 @@ jobs:
           go-version-file: act/go.mod
           cache-dependency-path: act/go.sum
 
-      # TestRunDifferentArchitecture runs the arm64 variant of the image
-      - if: env.SKIP_TEST != 'true'
-        uses: docker/setup-qemu-action@v4
-
       - name: Login docker to GitHub Container Registry
         if: env.SKIP_TEST != 'true'
         run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
