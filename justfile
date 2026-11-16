@@ -89,6 +89,8 @@ build-platform type from platform manifest=("localhost/act-images/" + type + ":l
 
     img="localhost/act-images-build/{{ type }}-${arch}:$$"
     buildah commit --format docker --rm "$ctr" "$img"
+    # single-arch alias, e.g. localhost/act-images/act:24.04-arm64 (pushed to staging by CI)
+    buildah tag "$img" "{{ manifest }}-${arch}"
     if ! buildah manifest exists "{{ manifest }}"; then
         buildah manifest create "{{ manifest }}"
     fi
@@ -149,6 +151,42 @@ ci-push type version:
     mapfile -t tags <<< "$tags_out"
     printf 'pushing %s\n' "${tags[@]}"
     just --justfile "{{ justfile() }}" push "localhost/act-images/{{ type }}:{{ version }}" "${tags[@]}"
+
+# Staging reference of one architecture of TYPE/VERSION for this CI run ($STAGING:TYPE-VERSION-$STAGE_ID-ARCH)
+stage-ref type version arch:
+    @echo "${STAGING:?STAGING must be set, e.g. ghcr.io/owner/ubuntu-staging}:{{ type }}-{{ version }}-${STAGE_ID:?STAGE_ID must be set, e.g. the run id}-{{ arch }}"
+
+# CI: build one PLATFORM of TYPE natively and push it to its staging tag (see `stage-ref`)
+ci-stage type version from platform:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    arch="$(echo "{{ platform }}" | cut -d/ -f2)"
+    dest="$(just --justfile "{{ justfile() }}" stage-ref "{{ type }}" "{{ version }}" "$arch")"
+    buildah manifest rm "localhost/act-images/{{ type }}:{{ version }}" >/dev/null 2>&1 || true
+    just --justfile "{{ justfile() }}" ci-build "{{ type }}" "{{ version }}" "{{ from }}" "{{ platform }}"
+    for attempt in 1 2 3; do
+        if buildah push "localhost/act-images/{{ type }}:{{ version }}-${arch}" "docker://$dest"; then
+            echo "==> staged $dest"
+            exit 0
+        fi
+        echo "Error pushing $dest, retrying... ($attempt/3)" >&2
+        sleep 2
+    done
+    exit 1
+
+# CI: combine the staged architectures ($ARCHES, default "amd64 arm64") of TYPE/VERSION and push to every tag from `tags`
+ci-publish type version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    manifest="localhost/act-images/{{ type }}:{{ version }}"
+    buildah manifest rm "$manifest" >/dev/null 2>&1 || true
+    buildah manifest create "$manifest"
+    for arch in ${ARCHES:-amd64 arm64}; do
+        ref="$(just --justfile "{{ justfile() }}" stage-ref "{{ type }}" "{{ version }}" "$arch")"
+        echo "==> adding $ref"
+        buildah manifest add "$manifest" "docker://$ref"
+    done
+    just --justfile "{{ justfile() }}" ci-push "{{ type }}" "{{ version }}"
 
 # CI: build TYPE for Ubuntu VERSION on top of FROM for every platform in $PLATFORMS, then push it
 ci type version from:

@@ -1,7 +1,7 @@
 name: Set up image build
 description: >-
-  Checks the runner's buildah, sets up QEMU, installs Ansible and just, and exports
-  SLUG (lowercased), PART_TAG and PUSH_DEFAULT for the justfile. Requires the repository to be checked out.
+  Checks the runner's buildah, installs Ansible and just, and exports SLUG (lowercased),
+  PART_TAG, PUSH_DEFAULT, STAGING and STAGE_ID for the justfile. Builds run natively (no QEMU). Requires the repository to be checked out.
 
 runs:
   using: composite
@@ -23,9 +23,6 @@ runs:
           sudo apt-get -y install passt
         fi
 
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v4
-
     - name: Install Ansible and just
       shell: bash
       run: |
@@ -33,12 +30,15 @@ runs:
         pipx install rust-just
         ansible-galaxy collection install -r ansible/requirements.yml
 
-    - name: Export SLUG, PART_TAG and PUSH_DEFAULT
+    - name: Export SLUG, PART_TAG, PUSH_DEFAULT, STAGING and STAGE_ID
       shell: bash
       env:
         EVENT: ${{ github.event_name }}
       run: |
         echo "SLUG=${SLUG,,}" | tee -a "$GITHUB_ENV"
+        # Per-architecture images of this run are pushed here, then combined into the real tags
+        echo "STAGING=ghcr.io/${SLUG,,}-staging" | tee -a "$GITHUB_ENV"
+        echo "STAGE_ID=${{ github.run_id }}" | tee -a "$GITHUB_ENV"
         if [[ "$EVENT" == schedule || "$EVENT" == workflow_dispatch ]]; then
           echo "PART_TAG=$(date +%Y%m%d)" | tee -a "$GITHUB_ENV"
         else
