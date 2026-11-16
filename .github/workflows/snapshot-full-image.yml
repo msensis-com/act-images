@@ -1,0 +1,186 @@
+name: Snapshot full images
+
+# The "full" images are filesystem snapshots of GitHub's own hosted runners (everything from
+# actions/runner-images: toolcache, JVMs, .NET, Android SDK, LLVM, ...), ~20GB compressed per arch.
+# Each runner tars its root filesystem in chunks and streams them straight into GHCR as image
+# layers (.github/scripts/ghcr-stream.mjs): there is not enough disk on a runner to build or pull
+# an image this size. Method from ChristopherHX/runner-image-blobs (MIT).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: 0 12 */7 * *
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_REPO: ${{ github.repository_owner }}/ubuntu
+  # Ubuntu version that also gets full-latest
+  LATEST_VERSION: 26.04
+  PUSH_DOCKER_HUB: ${{ secrets.DOCKER_USER && secrets.DOCKER_TOKEN && '1' || '' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  snapshot:
+    name: Snapshot ubuntu-${{ matrix.VERSION }} (${{ matrix.ARCH }})
+    runs-on: ubuntu-${{ matrix.VERSION }}${{ matrix.ARCH == 'arm64' && '-arm' || '' }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        VERSION:
+          - 26.04
+          - 24.04
+          - 22.04
+        ARCH:
+          - amd64
+          - arm64
+    env:
+      REGISTRY_USER: ${{ github.actor }}
+      REGISTRY_PASSWORD: ${{ github.token }}
+      IMAGE_LABEL_ORG_OPENCONTAINERS_IMAGE_SOURCE: ${{ github.server_url }}/${{ github.repository }}
+      IMAGE_LABEL_ORG_OPENCONTAINERS_IMAGE_REVISION: ${{ github.sha }}
+      IMAGE_LABEL_ORG_OPENCONTAINERS_IMAGE_TITLE: full-${{ matrix.VERSION }}-${{ matrix.ARCH }}
+      IMAGE_LABEL_ORG_OPENCONTAINERS_IMAGE_VENDOR: ${{ github.repository_owner }}
+      # lets the publish job verify the per-arch tag was produced by this run
+      IMAGE_LABEL_ACT_IMAGES_RUN_ID: ${{ github.run_id }}
+    steps:
+      # Nothing is installed or logged in here: whatever this job writes outside the workspace would
+      # end up in the snapshot. Node comes with the runner image; the workspace is excluded below.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Show runner image version
+        run: grep -E '^(ImageOS|ImageVersion)=' /etc/environment
+
+      - name: Layer base
+        run: |
+          .github/scripts/snapshot-layer.sh base --no-recursion /run /run/user /run/user/* --recursion \
+            "--exclude=$GITHUB_WORKSPACE" "--exclude=/proc/*" "--exclude=/dev/*" "--exclude=/run" "--exclude=/sys/*" \
+            "--exclude=/tmp/*" "--exclude=/opt/*" "--exclude=/var/cache/*" "--exclude=/var/snap" "--exclude=/var/run/*" \
+            "--exclude=/var/tmp/*" "--exclude=/var/crash/*" "--exclude=/var/lib/docker/*" "--exclude=/var/lib/apt/lists/*" \
+            "--exclude=/usr/local/*/*" "--exclude=/mnt/*" "--exclude=/snap/*" "--exclude=/boot" "--exclude=/data" \
+            "--exclude=/imagegeneration/installers/*.tar.*" "--exclude=/home/runner/runners" "--exclude=/home/runner/work" \
+            "--exclude=/usr/share/dotnet" "--exclude=/etc/skel" "--exclude=/home/runner/.rustup" "--exclude=/home/runner/.cargo" \
+            "--exclude=/home/runner/.dotnet" "--exclude=/home/runneradmin" "--exclude=/usr/share/swift" \
+            "--exclude=/usr/share/miniconda" "--exclude=/usr/lib/google-cloud-sdk" "--exclude=/usr/lib/jvm" \
+            "--exclude=/usr/lib/mono" "--exclude=/usr/lib/gcc" "--exclude=/usr/lib/llvm-*" "--exclude=/usr/lib/firefox" \
+            "--exclude=/usr/lib/python3" "--exclude=/etc/apt/apt.conf.d/50command-not-found" \
+            "--exclude=/usr/lib/cnf-update-db" "--exclude=/usr/lib/command-not-found" "--exclude=/etc/zsh_command_not_found" \
+            "--exclude=/var/lib/command-not-found" "--exclude=/swapfile" /
+
+      - name: Layer /usr/local
+        run: |
+          .github/scripts/snapshot-layer.sh usr-local "--exclude=/usr/local/lib/android" "--exclude=/usr/local/.ghcup" \
+            "--exclude=/usr/local/share/powershell" --no-recursion /usr --recursion /usr/local
+
+      - name: Layer /opt
+        run: .github/scripts/snapshot-layer.sh opt "--exclude=/opt/hostedtoolcache" /opt
+
+      - name: Layer .NET
+        run: .github/scripts/snapshot-layer.sh dotnet --no-recursion /home /home/runner /usr /usr/share --recursion /usr/share/dotnet /home/runner/.dotnet
+
+      - name: Layer Swift
+        run: .github/scripts/snapshot-layer.sh swift --no-recursion /usr /usr/share --recursion /usr/share/swift
+
+      - name: Layer Miniconda
+        run: .github/scripts/snapshot-layer.sh miniconda --no-recursion /usr /usr/share --recursion /usr/share/miniconda
+
+      - name: Layer Google Cloud SDK
+        run: .github/scripts/snapshot-layer.sh google-cloud-sdk --no-recursion /usr /usr/lib --recursion /usr/lib/google-cloud-sdk
+
+      - name: Layer JVM
+        run: .github/scripts/snapshot-layer.sh jvm --no-recursion /usr /usr/lib --recursion /usr/lib/jvm
+
+      - name: Layer Mono
+        run: .github/scripts/snapshot-layer.sh mono --no-recursion /usr /usr/lib --recursion /usr/lib/mono
+
+      - name: Layer GCC
+        run: .github/scripts/snapshot-layer.sh gcc --no-recursion /usr /usr/lib --recursion /usr/lib/gcc
+
+      - name: Layer LLVM
+        run: .github/scripts/snapshot-layer.sh llvm --no-recursion /usr /usr/lib --recursion /usr/lib/llvm-*
+
+      - name: Layer Firefox
+        run: .github/scripts/snapshot-layer.sh firefox --no-recursion /usr /usr/lib --recursion /usr/lib/firefox
+
+      - name: Layer Python 3
+        run: |
+          .github/scripts/snapshot-layer.sh python3 --no-recursion /usr /usr/lib /etc /etc/apt /etc/apt/apt.conf.d /var /var/lib \
+            /etc/apt/apt.conf.d/50command-not-found /usr/lib/cnf-update-db /usr/lib/command-not-found /etc/zsh_command_not_found \
+            --recursion /usr/lib/python3 /var/lib/command-not-found
+
+      - name: Layer Android SDK
+        run: .github/scripts/snapshot-layer.sh android --no-recursion /usr /usr/local /usr/local/lib --recursion /usr/local/lib/android
+
+      - name: Layer Haskell
+        run: .github/scripts/snapshot-layer.sh haskell --no-recursion /usr /usr/local --recursion /usr/local/.ghcup
+
+      - name: Layer PowerShell
+        run: .github/scripts/snapshot-layer.sh powershell --no-recursion /usr /usr/local /usr/local/share --recursion /usr/local/share/powershell
+
+      - name: Layer hosted tool cache
+        run: .github/scripts/snapshot-layer.sh hostedtoolcache --no-recursion /opt --recursion /opt/hostedtoolcache
+
+      - name: Layer Rust
+        run: .github/scripts/snapshot-layer.sh rust --no-recursion /home /home/runner --recursion /home/runner/.rustup /home/runner/.cargo
+
+      - name: Push full-${{ matrix.VERSION }}-${{ matrix.ARCH }}
+        run: node .github/scripts/ghcr-stream.mjs manifest "$RUNNER_TEMP/snapshot/layers.jsonl" full-${{ matrix.VERSION }}-${{ matrix.ARCH }}
+
+  publish:
+    name: Publish full-${{ matrix.VERSION }}
+    needs: [snapshot]
+    if: (!cancelled())
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        VERSION:
+          - 26.04
+          - 24.04
+          - 22.04
+    steps:
+      - name: Login to GitHub Container Registry
+        run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Check both architectures come from this run
+        run: |
+          repo="ghcr.io/${IMAGE_REPO,,}"
+          for arch in amd64 arm64; do
+            run_id="$(docker buildx imagetools inspect "$repo:full-${{ matrix.VERSION }}-$arch" \
+              --format '{{ index .Image.Config.Labels "act.images.run.id" }}')"
+            if [[ "$run_id" != "${{ github.run_id }}" ]]; then
+              echo "::error::full-${{ matrix.VERSION }}-$arch is from run '$run_id', not this run; its snapshot failed"
+              exit 1
+            fi
+          done
+
+      - name: Publish full-${{ matrix.VERSION }} (amd64 + arm64)
+        run: |
+          repo="ghcr.io/${IMAGE_REPO,,}"
+          tags=(-t "$repo:full-${{ matrix.VERSION }}")
+          if [[ "${{ matrix.VERSION }}" == "$LATEST_VERSION" ]]; then
+            tags+=(-t "$repo:full-latest")
+          fi
+          docker buildx imagetools create "${tags[@]}" \
+            "$repo:full-${{ matrix.VERSION }}-amd64" "$repo:full-${{ matrix.VERSION }}-arm64"
+
+      - name: Copy to Docker Hub
+        if: env.PUSH_DOCKER_HUB
+        run: |
+          src="ghcr.io/${IMAGE_REPO,,}:full-${{ matrix.VERSION }}"
+          dests=("docker.io/${IMAGE_REPO,,}:full-${{ matrix.VERSION }}")
+          if [[ "${{ matrix.VERSION }}" == "$LATEST_VERSION" ]]; then
+            dests+=("docker.io/${IMAGE_REPO,,}:full-latest")
+          fi
+          for dest in "${dests[@]}"; do
+            skopeo copy -a --src-creds "${{ github.actor }}:${{ github.token }}" \
+              --dest-creds "${{ secrets.DOCKER_USER }}:${{ secrets.DOCKER_TOKEN }}" "docker://$src" "docker://$dest"
+          done

@@ -49,16 +49,15 @@ just lint
 
 ## Images available
 
-- [ChristopherHX/runner-image-blobs](https://github.com/ChristopherHX/runner-image-blobs) GitHub Actions Hosted runner image copy containing almost all possible tools (image is extremely big, 20GB compressed, ~60GB extracted)
-  - A tar backup of the GitHub Hosted Runners are uploaded once a week via a custom docker image upload script in runner-image-blobs repository
-  - Synced by cron job `.github/workflows/copy-full-image.yml` to the following tags
-  - You can verify if the Image is still updated regulary by inspecting the dates in `docker buildx imagetools inspect ghcr.io/msensis-com/ubuntu:full-latest --format "{{ json . }}"`
-    - The friendly tag name version in the output can be looked up here https://github.com/actions/runner-images/releases to find out more about the sources
+- `full` - a snapshot of GitHub's own hosted runner (`ubuntu-<version>` / `ubuntu-<version>-arm`) containing almost all possible tools (image is extremely big, ~20GB compressed, ~60GB extracted)
+  - Taken weekly by [`.github/workflows/snapshot-full-image.yml`](./.github/workflows/snapshot-full-image.yml): each runner tars its own root filesystem in chunks and streams them straight into GHCR as image layers ([`.github/scripts/ghcr-stream.mjs`](./.github/scripts/ghcr-stream.mjs)), because a runner does not have enough disk to build or pull an image this size. Method from [ChristopherHX/runner-image-blobs](https://github.com/ChristopherHX/runner-image-blobs)
+  - The runner image version is in the `org.opencontainers.image.version` label (`docker buildx imagetools inspect ghcr.io/msensis-com/ubuntu:full-latest --format "{{ json . }}"`); look it up in https://github.com/actions/runner-images/releases
   - available tags are
     - `ghcr.io/msensis-com/ubuntu:full-latest` (aka `full-26.04`)
     - `ghcr.io/msensis-com/ubuntu:full-26.04`
     - `ghcr.io/msensis-com/ubuntu:full-24.04`
     - `ghcr.io/msensis-com/ubuntu:full-22.04`
+    - single-architecture variants: `full-<version>-amd64`, `full-<version>-arm64`
 
 - [`act`](./ansible/roles/act/tasks/main.yml) - image used in [github.com/nektos/act][nektos/act] as medium size image retaining compatibility with most actions while maintaining small size
   - `ghcr.io/msensis-com/ubuntu:act-22.04`
